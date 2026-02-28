@@ -1,5 +1,7 @@
 # Package Tracker for Home Assistant
 
+[![codecov](https://codecov.io/gh/WolffRuoff/package_tracker/branch/main/graph/badge.svg)](https://codecov.io/gh/WolffRuoff/package_tracker)
+
 A HACS custom integration that tracks shipping packages from USPS, UPS, and FedEx with a built-in Lovelace card.
 
 ## Features
@@ -76,3 +78,25 @@ Each tracked package creates a sensor with these attributes:
 - `last_updated` — Last successful API poll (ISO format)
 - `raw_status` — Raw status text from the carrier
 - `events` — List of tracking events with timestamp, location, description, and status
+
+## Development / Testing
+
+Install test dependencies:
+
+```bash
+pip install -e ".[test]"
+```
+
+Run the test suite:
+
+```bash
+pytest
+```
+
+Run with coverage:
+
+```bash
+pytest --cov
+```
+
+CI requires all tests to pass before merging.

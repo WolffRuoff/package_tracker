@@ -4,3 +4,8 @@ dist/
 *.pyc
 __pycache__/
 .DS_Store
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.egg-info/

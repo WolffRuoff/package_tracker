@@ -19,7 +19,11 @@ This compiles TypeScript → `custom_components/package_tracker/frontend/package
 # Locally via the HACS action container, or just push and check GitHub Actions
 ```
 
-There are no Python tests, linting, or build steps configured yet.
+**Tests** (from repo root):
+```bash
+pip install -e ".[test]"
+pytest --cov
+```
 
 ## Architecture
 
@@ -32,6 +36,10 @@ There are no Python tests, linting, or build steps configured yet.
 **Package management via options flow:** One integration config entry holds API keys in `data` and the package list in `options`. Adding/removing packages triggers `_async_update_listener` which reloads the entire integration.
 
 **Embedded frontend:** The Lovelace card JS is served via `hass.http.register_static_path()` in `__init__.py`, so the card ships with the integration—no separate HACS frontend install.
+
+## Testing
+
+Tests live in `tests/` at the repo root. Uses `pytest` + `pytest-asyncio` + `aioresponses` for mocking HTTP. CI requires passing tests to merge (see `.github/workflows/validate.yml`).
 
 ## Key Conventions
 
