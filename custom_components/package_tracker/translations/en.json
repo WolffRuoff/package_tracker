@@ -1,0 +1,52 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Package Tracker API Keys",
+        "description": "Enter API keys for the carriers you want to track. Leave blank to skip a carrier.",
+        "data": {
+          "usps_api_key": "USPS Web Tools User ID",
+          "ups_client_id": "UPS Client ID",
+          "ups_client_secret": "UPS Client Secret",
+          "fedex_api_key": "FedEx API Key",
+          "fedex_secret_key": "FedEx Secret Key"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Package Tracker",
+        "description": "Manage your tracked packages.",
+        "menu_options": {
+          "add_package": "Add a package",
+          "remove_package": "Remove a package"
+        }
+      },
+      "add_package": {
+        "title": "Add Package",
+        "description": "Enter the tracking details for a new package.",
+        "data": {
+          "label": "Package Label",
+          "tracking_number": "Tracking Number",
+          "carrier": "Carrier"
+        }
+      },
+      "remove_package": {
+        "title": "Remove Package",
+        "description": "Select a package to stop tracking.",
+        "data": {
+          "package": "Package"
+        }
+      }
+    },
+    "error": {
+      "cannot_detect_carrier": "Could not detect carrier. Please select one manually.",
+      "already_tracked": "This tracking number is already being tracked."
+    },
+    "abort": {
+      "no_packages": "No packages to remove."
+    }
+  }
+}
