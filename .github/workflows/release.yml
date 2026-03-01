@@ -1,0 +1,123 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if skip release
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+          if [[ "$COMMIT_MSG" == chore:\ bump\ version\ to\ * ]] && [[ "$COMMIT_AUTHOR" == "github-actions[bot]" ]]; then
+            echo "SKIP_RELEASE=true" >> "$GITHUB_ENV"
+            echo "Skipping release — this is a version-bump commit from the bot."
+          fi
+
+      - name: Get latest tag
+        if: env.SKIP_RELEASE != 'true'
+        run: |
+          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No existing v* tag found. Reading version from manifest.json..."
+            VERSION=$(python3 -c "import json; print(json.load(open('custom_components/package_tracker/manifest.json'))['version'])")
+            FIRST_COMMIT=$(git rev-list --max-parents=0 HEAD)
+            git tag "v${VERSION}" "$FIRST_COMMIT"
+            LATEST_TAG="v${VERSION}"
+            echo "Created tag $LATEST_TAG on first commit."
+          fi
+          echo "LATEST_TAG=$LATEST_TAG" >> "$GITHUB_ENV"
+          echo "Latest tag: $LATEST_TAG"
+
+      - name: Check for new commits
+        if: env.SKIP_RELEASE != 'true'
+        run: |
+          COMMIT_COUNT=$(git rev-list "$LATEST_TAG"..HEAD --count --no-merges)
+          if [ "$COMMIT_COUNT" -eq 0 ]; then
+            echo "SKIP_RELEASE=true" >> "$GITHUB_ENV"
+            echo "No new commits since $LATEST_TAG. Skipping release."
+          else
+            echo "$COMMIT_COUNT new commit(s) since $LATEST_TAG."
+          fi
+
+      - name: Determine version bump
+        if: env.SKIP_RELEASE != 'true'
+        run: |
+          COMMITS=$(git log "$LATEST_TAG"..HEAD --pretty="%s%n%b" --no-merges)
+
+          BUMP="patch"
+          if echo "$COMMITS" | grep -qiE 'BREAKING CHANGE:|^[a-z]+(\(.+\))?!:'; then
+            BUMP="major"
+          elif echo "$COMMITS" | grep -qiE '^feat(\(.+\))?:'; then
+            BUMP="minor"
+          fi
+
+          echo "BUMP=$BUMP" >> "$GITHUB_ENV"
+          echo "Bump type: $BUMP"
+
+      - name: Calculate new version
+        if: env.SKIP_RELEASE != 'true'
+        run: |
+          CURRENT="${LATEST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "$BUMP" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "NEW_VERSION=$NEW_VERSION" >> "$GITHUB_ENV"
+          echo "New version: $NEW_VERSION (was $CURRENT)"
+
+      - name: Update manifest.json
+        if: env.SKIP_RELEASE != 'true'
+        run: |
+          python3 -c "
+          import json, pathlib
+          p = pathlib.Path('custom_components/package_tracker/manifest.json')
+          data = json.loads(p.read_text())
+          data['version'] = '${{ env.NEW_VERSION }}'
+          p.write_text(json.dumps(data, indent=2) + '\n')
+          "
+          echo "Updated manifest.json to version $NEW_VERSION"
+
+      - name: Commit, tag, and push
+        if: env.SKIP_RELEASE != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/package_tracker/manifest.json
+          git commit -m "chore: bump version to $NEW_VERSION"
+          git tag "v$NEW_VERSION"
+          git push origin HEAD --tags
+
+      - name: Create GitHub Release
+        if: env.SKIP_RELEASE != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$NEW_VERSION" \
+            --generate-notes \
+            --notes-start-tag "$LATEST_TAG"
