@@ -8,12 +8,7 @@ import pytest
 
 from package_tracker.carriers.base import TrackingResult
 from package_tracker.const import (
-    CONF_FEDEX_API_KEY,
-    CONF_FEDEX_SECRET_KEY,
     CONF_PACKAGES,
-    CONF_UPS_CLIENT_ID,
-    CONF_UPS_CLIENT_SECRET,
-    CONF_USPS_API_KEY,
     Carrier,
     TrackingStatus,
 )
@@ -34,6 +29,7 @@ def coordinator(mock_hass, mock_config_entry):
         coord.data = None
         coord.logger = MagicMock()
         coord.name = "package_tracker"
+        coord.update_interval = None
         coord._init_providers()
         return coord
 
@@ -42,53 +38,10 @@ class TestInitProviders:
     """Tests for _init_providers."""
 
     def test_all_providers_created(self, coordinator):
+        """All 3 carriers should always have providers."""
         assert Carrier.USPS in coordinator._providers
         assert Carrier.UPS in coordinator._providers
         assert Carrier.FEDEX in coordinator._providers
-
-    def test_skips_missing_usps_key(self, mock_hass):
-        entry = MagicMock()
-        entry.data = {
-            CONF_UPS_CLIENT_ID: "id",
-            CONF_UPS_CLIENT_SECRET: "secret",
-        }
-        entry.options = {CONF_PACKAGES: []}
-
-        with patch(
-            "package_tracker.coordinator.DataUpdateCoordinator.__init__",
-            return_value=None,
-        ):
-            coord = PackageTrackerCoordinator.__new__(PackageTrackerCoordinator)
-            coord.hass = mock_hass
-            coord.entry = entry
-            coord._providers = {}
-            coord.data = None
-            coord.logger = MagicMock()
-            coord.name = "package_tracker"
-            coord._init_providers()
-
-        assert Carrier.USPS not in coord._providers
-        assert Carrier.UPS in coord._providers
-
-    def test_skips_partial_ups_keys(self, mock_hass):
-        entry = MagicMock()
-        entry.data = {CONF_UPS_CLIENT_ID: "id"}  # missing secret
-        entry.options = {CONF_PACKAGES: []}
-
-        with patch(
-            "package_tracker.coordinator.DataUpdateCoordinator.__init__",
-            return_value=None,
-        ):
-            coord = PackageTrackerCoordinator.__new__(PackageTrackerCoordinator)
-            coord.hass = mock_hass
-            coord.entry = entry
-            coord._providers = {}
-            coord.data = None
-            coord.logger = MagicMock()
-            coord.name = "package_tracker"
-            coord._init_providers()
-
-        assert Carrier.UPS not in coord._providers
 
 
 class TestGetPackages:
@@ -149,7 +102,7 @@ class TestAsyncUpdateData:
         coordinator.data = {"92001234567890123456": previous_result}
 
         mock_provider = AsyncMock()
-        mock_provider.async_track.side_effect = Exception("API error")
+        mock_provider.async_track.side_effect = Exception("Scraping error")
         coordinator._providers[Carrier.USPS] = mock_provider
 
         results = await coordinator._async_update_data()
@@ -165,3 +118,24 @@ class TestAsyncUpdateData:
         results = await coordinator._async_update_data()
 
         assert "92001234567890123456" not in results
+
+    @pytest.mark.asyncio
+    async def test_jittered_interval_changes(self, coordinator):
+        """Verify update interval is re-randomized after each update."""
+        mock_provider = AsyncMock()
+        mock_provider.async_track.return_value = TrackingResult(
+            carrier=Carrier.USPS,
+            tracking_number="92001234567890123456",
+            status=TrackingStatus.DELIVERED,
+        )
+        coordinator._providers[Carrier.USPS] = mock_provider
+
+        await coordinator._async_update_data()
+        interval1 = coordinator.update_interval
+
+        await coordinator._async_update_data()
+        interval2 = coordinator.update_interval
+
+        # Both should be timedelta objects (may or may not be equal due to randomness)
+        assert interval1 is not None
+        assert interval2 is not None

@@ -1,4 +1,7 @@
 node_modules/
+node_modules.nosync/
+# iCloud creates "node_modules 2" symlink to .nosync variant
+node_modules\ 2
 .rollup.cache/
 dist/
 *.pyc
@@ -9,3 +12,9 @@ htmlcov/
 .coverage
 coverage.xml
 *.egg-info/
+*.egg
+build/
+.eggs/
+.env
+.venv/
+venv/

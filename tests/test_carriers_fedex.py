@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from unittest.mock import patch
 
 import pytest
-from aioresponses import aioresponses
 
 from package_tracker.carriers.fedex import (
     DESCRIPTION_MAPPING,
-    FEDEX_TOKEN_URL,
-    FEDEX_TRACK_URL,
     STATUS_MAPPING,
     FedExProvider,
 )
@@ -19,7 +16,7 @@ from package_tracker.const import Carrier, TrackingStatus
 
 @pytest.fixture
 def provider():
-    return FedExProvider(api_key="test_key", secret_key="test_secret")
+    return FedExProvider()
 
 
 VALID_TRACKING_12 = "123456789012"
@@ -55,176 +52,123 @@ class TestValidateTrackingNumber:
         assert provider.validate_tracking_number("1Z12345E6605272234") is False
 
 
-class TestOAuthToken:
-    """Tests for FedEx OAuth token management."""
+class TestTrackingUrl:
+    """Tests for tracking URL generation."""
 
-    @pytest.mark.asyncio
-    async def test_token_acquisition(self, provider, fedex_token_response):
-        with aioresponses() as mocked:
-            mocked.post(FEDEX_TOKEN_URL, payload=fedex_token_response)
+    def test_tracking_url(self, provider):
+        url = provider.tracking_url(VALID_TRACKING_12)
+        assert VALID_TRACKING_12 in url
+        assert "fedex.com" in url
 
-            await provider._ensure_token()
 
-        assert provider._access_token == "fedex_token_123"
-        assert provider._token_expires is not None
+class TestParseTrackingPage:
+    """Tests for _parse_tracking_page with HTML fixtures."""
 
-    @pytest.mark.asyncio
-    async def test_token_reuse_when_valid(self, provider):
-        provider._access_token = "existing_token"
-        provider._token_expires = datetime.now() + timedelta(hours=1)
+    def test_delivered_status(self, provider, fedex_delivered_html):
+        from package_tracker.carriers.base import TrackingResult
 
-        await provider._ensure_token()
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_page(fedex_delivered_html, result)
 
-        assert provider._access_token == "existing_token"
+        assert result.status == TrackingStatus.DELIVERED
+        assert "delivered" in result.raw_status.lower()
 
-    @pytest.mark.asyncio
-    async def test_token_refresh_when_expired(self, provider, fedex_token_response):
-        provider._access_token = "old_token"
-        provider._token_expires = datetime.now() - timedelta(hours=1)
+    def test_delivered_events(self, provider, fedex_delivered_html):
+        from package_tracker.carriers.base import TrackingResult
 
-        with aioresponses() as mocked:
-            mocked.post(FEDEX_TOKEN_URL, payload=fedex_token_response)
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_page(fedex_delivered_html, result)
 
-            await provider._ensure_token()
+        assert len(result.events) == 3
+        assert "Delivered" in result.events[0].description
 
-        assert provider._access_token == "fedex_token_123"
+    def test_delivered_estimated_delivery(self, provider, fedex_delivered_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_page(fedex_delivered_html, result)
+
+        assert result.estimated_delivery is not None
+        assert result.estimated_delivery.month == 1
+        assert result.estimated_delivery.day == 15
+
+    def test_in_transit_status(self, provider, fedex_in_transit_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_page(fedex_in_transit_html, result)
+
+        assert result.status == TrackingStatus.IN_TRANSIT
+
+    def test_in_transit_events(self, provider, fedex_in_transit_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_page(fedex_in_transit_html, result)
+
+        assert len(result.events) == 2
+
+    def test_not_found_stays_unknown(self, provider, fedex_not_found_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_page(fedex_not_found_html, result)
+
+        assert result.status == TrackingStatus.UNKNOWN
+        assert result.events == []
 
 
 class TestAsyncTrack:
-    """Tests for FedEx async_track with mocked API."""
+    """Tests for async_track with mocked Playwright."""
 
     @pytest.mark.asyncio
     async def test_successful_tracking(
-        self, provider, fedex_token_response, fedex_json_success
+        self, provider, mock_playwright, fedex_delivered_html
     ):
-        with aioresponses() as mocked:
-            mocked.post(FEDEX_TOKEN_URL, payload=fedex_token_response)
-            mocked.post(FEDEX_TRACK_URL, payload=fedex_json_success)
+        mock_cm, mock_page = mock_playwright
+        mock_page.content.return_value = fedex_delivered_html
 
+        with patch(
+            "package_tracker.carriers.base.async_playwright", return_value=mock_cm
+        ):
             result = await provider.async_track(VALID_TRACKING_12)
 
         assert result.carrier == Carrier.FEDEX
         assert result.status == TrackingStatus.DELIVERED
-        assert result.raw_status == "Delivered"
-        assert len(result.events) == 2
+        assert len(result.events) == 3
         assert result.last_updated is not None
 
     @pytest.mark.asyncio
-    async def test_estimated_delivery_parsed(
-        self, provider, fedex_token_response, fedex_json_success
-    ):
-        with aioresponses() as mocked:
-            mocked.post(FEDEX_TOKEN_URL, payload=fedex_token_response)
-            mocked.post(FEDEX_TRACK_URL, payload=fedex_json_success)
+    async def test_playwright_error_returns_unknown(self, provider, mock_playwright):
+        mock_cm, mock_page = mock_playwright
+        mock_page.goto.side_effect = Exception("Browser error")
 
-            result = await provider.async_track(VALID_TRACKING_12)
-
-        assert result.estimated_delivery is not None
-        assert result.estimated_delivery.year == 2025
-        assert result.estimated_delivery.month == 1
-        assert result.estimated_delivery.day == 15
-
-    @pytest.mark.asyncio
-    async def test_error_in_response(self, provider, fedex_token_response):
-        error_response = {
-            "output": {
-                "completeTrackResults": [
-                    {
-                        "trackResults": [
-                            {
-                                "error": {
-                                    "code": "TRACKING.TRACKINGNUMBER.NOTFOUND",
-                                    "message": "Tracking number not found",
-                                }
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-
-        with aioresponses() as mocked:
-            mocked.post(FEDEX_TOKEN_URL, payload=fedex_token_response)
-            mocked.post(FEDEX_TRACK_URL, payload=error_response)
-
-            result = await provider.async_track(VALID_TRACKING_12)
-
-        assert result.raw_status == "Tracking number not found"
-        assert result.status == TrackingStatus.UNKNOWN
-
-    @pytest.mark.asyncio
-    async def test_http_error(self, provider, fedex_token_response):
-        with aioresponses() as mocked:
-            mocked.post(FEDEX_TOKEN_URL, payload=fedex_token_response)
-            mocked.post(FEDEX_TRACK_URL, status=500)
-
+        with patch(
+            "package_tracker.carriers.base.async_playwright", return_value=mock_cm
+        ):
             result = await provider.async_track(VALID_TRACKING_12)
 
         assert result.status == TrackingStatus.UNKNOWN
         assert result.events == []
 
 
-class TestParseScan:
-    """Tests for _parse_scan."""
-
-    def test_parses_complete_scan(self, provider):
-        scan = {
-            "eventDescription": "Delivered",
-            "derivedStatusCode": "DL",
-            "scanLocation": {
-                "city": "Springfield",
-                "stateOrProvinceCode": "IL",
-                "countryCode": "US",
-            },
-            "date": "2025-01-15T14:30:00Z",
-        }
-        event = provider._parse_scan(scan)
-
-        assert event is not None
-        assert event.location == "Springfield, IL, US"
-        assert event.description == "Delivered"
-        assert event.status == TrackingStatus.DELIVERED
-
-    def test_fallback_to_description_mapping(self, provider):
-        scan = {
-            "eventDescription": "In transit",
-            "eventType": "UNKNOWN_CODE",
-            "scanLocation": {},
-            "date": "2025-01-14T08:00:00Z",
-        }
-        event = provider._parse_scan(scan)
-
-        assert event is not None
-        assert event.status == TrackingStatus.IN_TRANSIT
-
-    def test_missing_location(self, provider):
-        scan = {
-            "eventDescription": "Picked Up",
-            "derivedStatusCode": "PU",
-        }
-        event = provider._parse_scan(scan)
-
-        assert event is not None
-        assert event.location == ""
-
-
 class TestStatusMapping:
     """Tests for FedEx status mappings."""
 
     def test_delivered(self):
-        assert STATUS_MAPPING["DL"] == TrackingStatus.DELIVERED
+        assert STATUS_MAPPING["delivered"] == TrackingStatus.DELIVERED
 
     def test_out_for_delivery(self):
-        assert STATUS_MAPPING["OD"] == TrackingStatus.OUT_FOR_DELIVERY
+        assert STATUS_MAPPING["out for delivery"] == TrackingStatus.OUT_FOR_DELIVERY
 
     def test_in_transit(self):
-        assert STATUS_MAPPING["IT"] == TrackingStatus.IN_TRANSIT
+        assert STATUS_MAPPING["in transit"] == TrackingStatus.IN_TRANSIT
 
     def test_pre_transit(self):
-        assert STATUS_MAPPING["PU"] == TrackingStatus.PRE_TRANSIT
+        assert STATUS_MAPPING["picked up"] == TrackingStatus.PRE_TRANSIT
 
     def test_exception(self):
-        assert STATUS_MAPPING["DE"] == TrackingStatus.EXCEPTION
+        assert STATUS_MAPPING["delivery exception"] == TrackingStatus.EXCEPTION
 
     def test_description_delivered(self):
         assert DESCRIPTION_MAPPING["Delivered"] == TrackingStatus.DELIVERED

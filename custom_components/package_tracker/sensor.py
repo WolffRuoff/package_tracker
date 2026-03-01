@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_PACKAGES, DOMAIN
+from .const import CONF_PACKAGES, DOMAIN, Carrier
 from .coordinator import PackageTrackerCoordinator
 
 
@@ -61,10 +61,21 @@ class PackageTrackerSensor(CoordinatorEntity[PackageTrackerCoordinator], SensorE
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra attributes for the sensor."""
+        # Build tracking URL from carrier provider
+        tracking_url = None
+        try:
+            carrier = Carrier(self._carrier)
+            provider = self.coordinator._providers.get(carrier)
+            if provider:
+                tracking_url = provider.tracking_url(self._tracking_number)
+        except ValueError:
+            pass
+
         attrs: dict[str, Any] = {
             "label": self._label,
             "carrier": self._carrier,
             "tracking_number": self._tracking_number,
+            "tracking_url": tracking_url,
         }
 
         if not self.coordinator.data:

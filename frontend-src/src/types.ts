@@ -8,6 +8,7 @@ export interface PackageEntityAttributes {
   label: string;
   carrier: string;
   tracking_number: string;
+  tracking_url: string | null;
   estimated_delivery: string | null;
   last_updated: string | null;
   raw_status: string;

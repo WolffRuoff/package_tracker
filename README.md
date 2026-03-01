@@ -37,7 +37,7 @@ A HACS custom integration that tracks shipping packages from USPS, UPS, and FedE
 
 | Carrier | Portal | Notes |
 |---------|--------|-------|
-| USPS | [Web Tools Registration](https://www.usps.com/business/web-tools-apis/) | Free User ID |
+| USPS | [USPS Developer Portal](https://developers.usps.com/) | OAuth Client ID + Secret |
 | UPS | [UPS Developer Portal](https://developer.ups.com/) | OAuth Client ID + Secret |
 | FedEx | [FedEx Developer Portal](https://developer.fedex.com/) | API Key + Secret Key |
 

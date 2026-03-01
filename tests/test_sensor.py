@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from package_tracker.carriers.base import TrackingEvent, TrackingResult
+from package_tracker.carriers.usps import USPSProvider
 from package_tracker.const import CONF_PACKAGES, DOMAIN, Carrier, TrackingStatus
 from package_tracker.sensor import PackageTrackerSensor, async_setup_entry
 
@@ -34,6 +35,9 @@ def mock_coordinator():
             ],
         )
     }
+    # Set up provider for tracking_url
+    usps_provider = USPSProvider()
+    coordinator._providers = {Carrier.USPS: usps_provider}
     return coordinator
 
 
@@ -120,6 +124,12 @@ class TestExtraStateAttributes:
         assert attrs["label"] == "Test Package"
         assert attrs["carrier"] == "usps"
         assert attrs["tracking_number"] == "92001234567890123456"
+
+    def test_includes_tracking_url(self, sensor):
+        attrs = sensor.extra_state_attributes
+        assert attrs["tracking_url"] is not None
+        assert "92001234567890123456" in attrs["tracking_url"]
+        assert "usps.com" in attrs["tracking_url"]
 
     def test_includes_tracking_result_attributes(self, sensor):
         attrs = sensor.extra_state_attributes

@@ -119,4 +119,26 @@ export const cardStyles = css`
     color: var(--secondary-text-color);
     margin-top: 2px;
   }
+
+  .tracking-link {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    color: var(--secondary-text-color);
+    text-decoration: none;
+    transition: background-color 0.2s, color 0.2s;
+  }
+
+  .tracking-link:hover {
+    background-color: var(--divider-color);
+    color: var(--primary-text-color);
+  }
+
+  .tracking-link ha-icon {
+    --mdc-icon-size: 18px;
+  }
 `;

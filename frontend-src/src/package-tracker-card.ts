@@ -161,6 +161,18 @@ export class PackageTrackerCard extends LitElement {
           <div class="status-text" style="color: ${color}">${statusLabel}</div>
           ${etaStr ? html`<div class="eta">ETA: ${etaStr}</div>` : nothing}
         </div>
+        ${attrs.tracking_url
+          ? html`<a
+              class="tracking-link"
+              href="${attrs.tracking_url}"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="View on carrier website"
+              @click="${(e: Event) => e.stopPropagation()}"
+            >
+              <ha-icon icon="mdi:open-in-new"></ha-icon>
+            </a>`
+          : nothing}
       </div>
     `;
   }

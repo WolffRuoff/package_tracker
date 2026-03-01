@@ -4,14 +4,16 @@ from enum import StrEnum
 
 DOMAIN = "package_tracker"
 
-CONF_USPS_API_KEY = "usps_api_key"
-CONF_UPS_CLIENT_ID = "ups_client_id"
-CONF_UPS_CLIENT_SECRET = "ups_client_secret"
-CONF_FEDEX_API_KEY = "fedex_api_key"
-CONF_FEDEX_SECRET_KEY = "fedex_secret_key"
 CONF_PACKAGES = "packages"
 
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+
 DEFAULT_SCAN_INTERVAL = 1800  # 30 minutes
+SCAN_INTERVAL_JITTER = 300  # +/- 5 minutes of randomness
 
 
 class Carrier(StrEnum):

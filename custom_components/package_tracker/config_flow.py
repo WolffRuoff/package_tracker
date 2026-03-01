@@ -16,12 +16,7 @@ from homeassistant.data_entry_flow import FlowResult
 
 from .carriers import detect_carrier
 from .const import (
-    CONF_FEDEX_API_KEY,
-    CONF_FEDEX_SECRET_KEY,
     CONF_PACKAGES,
-    CONF_UPS_CLIENT_ID,
-    CONF_UPS_CLIENT_SECRET,
-    CONF_USPS_API_KEY,
     DOMAIN,
     Carrier,
 )
@@ -35,27 +30,17 @@ class PackageTrackerConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the user step — collect API keys."""
+        """Handle the user step — simple confirmation, no API keys needed."""
         if user_input is not None:
-            # Filter out empty strings
-            data = {k: v for k, v in user_input.items() if v}
             return self.async_create_entry(
                 title="Package Tracker",
-                data=data,
+                data={},
                 options={CONF_PACKAGES: []},
             )
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_USPS_API_KEY, default=""): str,
-                    vol.Optional(CONF_UPS_CLIENT_ID, default=""): str,
-                    vol.Optional(CONF_UPS_CLIENT_SECRET, default=""): str,
-                    vol.Optional(CONF_FEDEX_API_KEY, default=""): str,
-                    vol.Optional(CONF_FEDEX_SECRET_KEY, default=""): str,
-                }
-            ),
+            data_schema=vol.Schema({}),
         )
 
     @staticmethod

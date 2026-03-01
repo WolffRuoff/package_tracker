@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from package_tracker.const import (
-    CONF_FEDEX_API_KEY,
-    CONF_FEDEX_SECRET_KEY,
     CONF_PACKAGES,
-    CONF_UPS_CLIENT_ID,
-    CONF_UPS_CLIENT_SECRET,
-    CONF_USPS_API_KEY,
     DOMAIN,
 )
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture
@@ -32,16 +30,10 @@ def mock_hass():
 
 @pytest.fixture
 def mock_config_entry():
-    """Return a mock ConfigEntry with all API keys."""
+    """Return a mock ConfigEntry (no API keys needed)."""
     entry = MagicMock()
     entry.entry_id = "test_entry_id"
-    entry.data = {
-        CONF_USPS_API_KEY: "test_usps_key",
-        CONF_UPS_CLIENT_ID: "test_ups_id",
-        CONF_UPS_CLIENT_SECRET: "test_ups_secret",
-        CONF_FEDEX_API_KEY: "test_fedex_key",
-        CONF_FEDEX_SECRET_KEY: "test_fedex_secret",
-    }
+    entry.data = {}
     entry.options = {
         CONF_PACKAGES: [
             {
@@ -56,169 +48,88 @@ def mock_config_entry():
     return entry
 
 
-@pytest.fixture
-def usps_xml_success():
-    """Return a successful USPS tracking XML response."""
-    return """<?xml version="1.0" encoding="UTF-8"?>
-<TrackResponse>
-  <TrackInfo ID="92001234567890123456">
-    <TrackSummary>
-      <Event>Delivered</Event>
-      <EventDate>January 15, 2025</EventDate>
-      <EventTime>2:30 pm</EventTime>
-      <EventCity>Springfield</EventCity>
-      <EventState>IL</EventState>
-    </TrackSummary>
-    <TrackDetail>
-      <Event>Out for Delivery</Event>
-      <EventDate>January 15, 2025</EventDate>
-      <EventTime>8:00 am</EventTime>
-      <EventCity>Springfield</EventCity>
-      <EventState>IL</EventState>
-    </TrackDetail>
-    <TrackDetail>
-      <Event>Arrived at Post Office</Event>
-      <EventDate>January 14, 2025</EventDate>
-      <EventTime>6:00 pm</EventTime>
-      <EventCity>Springfield</EventCity>
-      <EventState>IL</EventState>
-    </TrackDetail>
-    <ExpectedDeliveryDate>January 15, 2025</ExpectedDeliveryDate>
-  </TrackInfo>
-</TrackResponse>"""
+# --- HTML fixture loaders ---
 
 
 @pytest.fixture
-def usps_xml_error():
-    """Return a USPS tracking XML response with an error."""
-    return """<?xml version="1.0" encoding="UTF-8"?>
-<TrackResponse>
-  <TrackInfo ID="INVALID">
-    <Error>
-      <Number>-2147219283</Number>
-      <Description>A valid tracking number was not provided.</Description>
-    </Error>
-  </TrackInfo>
-</TrackResponse>"""
+def usps_delivered_html():
+    """Return rendered HTML of a USPS delivered tracking page."""
+    return (FIXTURES_DIR / "usps" / "delivered.html").read_text()
 
 
 @pytest.fixture
-def ups_json_success():
-    """Return a successful UPS tracking JSON response."""
-    return {
-        "trackResponse": {
-            "shipment": [
-                {
-                    "package": [
-                        {
-                            "currentStatus": {
-                                "type": "D",
-                                "description": "Delivered",
-                            },
-                            "deliveryDate": [{"date": "20250115"}],
-                            "activity": [
-                                {
-                                    "status": {
-                                        "type": "D",
-                                        "description": "Delivered",
-                                    },
-                                    "location": {
-                                        "address": {
-                                            "city": "Springfield",
-                                            "stateProvince": "IL",
-                                            "countryCode": "US",
-                                        }
-                                    },
-                                    "date": "20250115",
-                                    "time": "143000",
-                                },
-                                {
-                                    "status": {
-                                        "type": "I",
-                                        "description": "In Transit",
-                                    },
-                                    "location": {
-                                        "address": {
-                                            "city": "Chicago",
-                                            "stateProvince": "IL",
-                                            "countryCode": "US",
-                                        }
-                                    },
-                                    "date": "20250114",
-                                    "time": "080000",
-                                },
-                            ],
-                        }
-                    ]
-                }
-            ]
-        }
-    }
+def usps_in_transit_html():
+    """Return rendered HTML of a USPS in-transit tracking page."""
+    return (FIXTURES_DIR / "usps" / "in_transit.html").read_text()
 
 
 @pytest.fixture
-def ups_token_response():
-    """Return a UPS OAuth token response."""
-    return {
-        "access_token": "test_token_123",
-        "token_type": "Bearer",
-        "expires_in": 3600,
-    }
+def usps_not_found_html():
+    """Return rendered HTML of a USPS not-found tracking page."""
+    return (FIXTURES_DIR / "usps" / "not_found.html").read_text()
 
 
 @pytest.fixture
-def fedex_json_success():
-    """Return a successful FedEx tracking JSON response."""
-    return {
-        "output": {
-            "completeTrackResults": [
-                {
-                    "trackResults": [
-                        {
-                            "latestStatusDetail": {
-                                "code": "DL",
-                                "description": "Delivered",
-                            },
-                            "estimatedDeliveryTimeWindow": {
-                                "window": {
-                                    "ends": "2025-01-15T18:00:00Z",
-                                }
-                            },
-                            "scanEvents": [
-                                {
-                                    "eventDescription": "Delivered",
-                                    "derivedStatusCode": "DL",
-                                    "scanLocation": {
-                                        "city": "Springfield",
-                                        "stateOrProvinceCode": "IL",
-                                        "countryCode": "US",
-                                    },
-                                    "date": "2025-01-15T14:30:00Z",
-                                },
-                                {
-                                    "eventDescription": "On FedEx vehicle for delivery",
-                                    "derivedStatusCode": "OD",
-                                    "scanLocation": {
-                                        "city": "Springfield",
-                                        "stateOrProvinceCode": "IL",
-                                        "countryCode": "US",
-                                    },
-                                    "date": "2025-01-15T08:00:00Z",
-                                },
-                            ],
-                        }
-                    ]
-                }
-            ]
-        }
-    }
+def ups_delivered_html():
+    """Return rendered HTML of a UPS delivered tracking page."""
+    return (FIXTURES_DIR / "ups" / "delivered.html").read_text()
 
 
 @pytest.fixture
-def fedex_token_response():
-    """Return a FedEx OAuth token response."""
-    return {
-        "access_token": "fedex_token_123",
-        "token_type": "bearer",
-        "expires_in": 3600,
-    }
+def ups_in_transit_html():
+    """Return rendered HTML of a UPS in-transit tracking page."""
+    return (FIXTURES_DIR / "ups" / "in_transit.html").read_text()
+
+
+@pytest.fixture
+def ups_not_found_html():
+    """Return rendered HTML of a UPS not-found tracking page."""
+    return (FIXTURES_DIR / "ups" / "not_found.html").read_text()
+
+
+@pytest.fixture
+def fedex_delivered_html():
+    """Return rendered HTML of a FedEx delivered tracking page."""
+    return (FIXTURES_DIR / "fedex" / "delivered.html").read_text()
+
+
+@pytest.fixture
+def fedex_in_transit_html():
+    """Return rendered HTML of a FedEx in-transit tracking page."""
+    return (FIXTURES_DIR / "fedex" / "in_transit.html").read_text()
+
+
+@pytest.fixture
+def fedex_not_found_html():
+    """Return rendered HTML of a FedEx not-found tracking page."""
+    return (FIXTURES_DIR / "fedex" / "not_found.html").read_text()
+
+
+@pytest.fixture
+def mock_playwright():
+    """Mock Playwright to avoid real browser launches.
+
+    Returns (mock_playwright_context, mock_page) so tests can configure
+    mock_page.content.return_value with fixture HTML.
+    """
+    mock_page = AsyncMock()
+    mock_page.goto = AsyncMock()
+    mock_page.wait_for_selector = AsyncMock()
+    mock_page.content = AsyncMock(return_value="<html></html>")
+
+    mock_context = AsyncMock()
+    mock_context.new_page = AsyncMock(return_value=mock_page)
+
+    mock_browser = AsyncMock()
+    mock_browser.new_context = AsyncMock(return_value=mock_context)
+    mock_browser.close = AsyncMock()
+
+    mock_pw = AsyncMock()
+    mock_pw.chromium = MagicMock()
+    mock_pw.chromium.launch = AsyncMock(return_value=mock_browser)
+
+    mock_cm = AsyncMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_pw)
+    mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+    return mock_cm, mock_page

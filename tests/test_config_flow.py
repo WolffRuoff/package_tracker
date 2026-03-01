@@ -11,12 +11,7 @@ from package_tracker.config_flow import (
     PackageTrackerOptionsFlow,
 )
 from package_tracker.const import (
-    CONF_FEDEX_API_KEY,
-    CONF_FEDEX_SECRET_KEY,
     CONF_PACKAGES,
-    CONF_UPS_CLIENT_ID,
-    CONF_UPS_CLIENT_SECRET,
-    CONF_USPS_API_KEY,
     Carrier,
 )
 
@@ -81,34 +76,11 @@ class TestConfigFlowUser:
         assert result["type"] == "form"
 
     @pytest.mark.asyncio
-    async def test_creates_entry_with_api_keys(self, config_flow):
-        result = await config_flow.async_step_user(
-            {
-                CONF_USPS_API_KEY: "usps_key",
-                CONF_UPS_CLIENT_ID: "ups_id",
-                CONF_UPS_CLIENT_SECRET: "ups_secret",
-                CONF_FEDEX_API_KEY: "fedex_key",
-                CONF_FEDEX_SECRET_KEY: "fedex_secret",
-            }
-        )
+    async def test_creates_entry_without_api_keys(self, config_flow):
+        result = await config_flow.async_step_user({})
         assert result["type"] == "create_entry"
-        assert result["data"][CONF_USPS_API_KEY] == "usps_key"
-        assert result["data"][CONF_UPS_CLIENT_ID] == "ups_id"
-
-    @pytest.mark.asyncio
-    async def test_filters_empty_strings(self, config_flow):
-        result = await config_flow.async_step_user(
-            {
-                CONF_USPS_API_KEY: "usps_key",
-                CONF_UPS_CLIENT_ID: "",
-                CONF_UPS_CLIENT_SECRET: "",
-                CONF_FEDEX_API_KEY: "",
-                CONF_FEDEX_SECRET_KEY: "",
-            }
-        )
-        assert result["type"] == "create_entry"
-        assert CONF_UPS_CLIENT_ID not in result["data"]
-        assert CONF_USPS_API_KEY in result["data"]
+        assert result["data"] == {}
+        assert result["options"] == {CONF_PACKAGES: []}
 
 
 class TestOptionsFlowAddPackage:

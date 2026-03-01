@@ -1,4 +1,4 @@
-"""FedEx carrier provider using Track API."""
+"""FedEx carrier provider using web scraping."""
 
 from __future__ import annotations
 
@@ -6,32 +6,37 @@ import logging
 import re
 from datetime import datetime
 
-import aiohttp
+from bs4 import BeautifulSoup
 
 from ..const import Carrier, TrackingStatus
 from .base import CarrierProvider, TrackingEvent, TrackingResult
 
 _LOGGER = logging.getLogger(__name__)
 
-FEDEX_TOKEN_URL = "https://apis.fedex.com/oauth/token"
-FEDEX_TRACK_URL = "https://apis.fedex.com/track/v1/trackingnumbers"
+FEDEX_TRACKING_PAGE = "https://www.fedex.com/fedextrack/?trknbr={tracking_number}"
+
+WAIT_SELECTOR = (
+    ".shipment-status-progress, "
+    ".tracking-result, "
+    ".alert__heading"
+)
 
 STATUS_MAPPING: dict[str, TrackingStatus] = {
-    "PU": TrackingStatus.PRE_TRANSIT,
-    "OC": TrackingStatus.PRE_TRANSIT,
-    "IT": TrackingStatus.IN_TRANSIT,
-    "IX": TrackingStatus.IN_TRANSIT,
-    "AR": TrackingStatus.IN_TRANSIT,
-    "DP": TrackingStatus.IN_TRANSIT,
-    "OD": TrackingStatus.OUT_FOR_DELIVERY,
-    "DL": TrackingStatus.DELIVERED,
-    "DE": TrackingStatus.EXCEPTION,
-    "CA": TrackingStatus.EXCEPTION,
-    "SE": TrackingStatus.EXCEPTION,
-    "CD": TrackingStatus.EXCEPTION,
+    "delivered": TrackingStatus.DELIVERED,
+    "out for delivery": TrackingStatus.OUT_FOR_DELIVERY,
+    "on fedex vehicle for delivery": TrackingStatus.OUT_FOR_DELIVERY,
+    "in transit": TrackingStatus.IN_TRANSIT,
+    "at local fedex facility": TrackingStatus.IN_TRANSIT,
+    "departed fedex location": TrackingStatus.IN_TRANSIT,
+    "arrived at fedex location": TrackingStatus.IN_TRANSIT,
+    "at destination sort facility": TrackingStatus.IN_TRANSIT,
+    "picked up": TrackingStatus.PRE_TRANSIT,
+    "shipment information sent to fedex": TrackingStatus.PRE_TRANSIT,
+    "label created": TrackingStatus.PRE_TRANSIT,
+    "delivery exception": TrackingStatus.EXCEPTION,
+    "clearance delay": TrackingStatus.EXCEPTION,
 }
 
-# Higher-level status descriptions from FedEx
 DESCRIPTION_MAPPING: dict[str, TrackingStatus] = {
     "Picked Up": TrackingStatus.PRE_TRANSIT,
     "Shipment information sent to FedEx": TrackingStatus.PRE_TRANSIT,
@@ -45,14 +50,7 @@ DESCRIPTION_MAPPING: dict[str, TrackingStatus] = {
 
 
 class FedExProvider(CarrierProvider):
-    """FedEx tracking provider."""
-
-    def __init__(self, api_key: str, secret_key: str) -> None:
-        """Initialize with FedEx API credentials."""
-        self._api_key = api_key
-        self._secret_key = secret_key
-        self._access_token: str | None = None
-        self._token_expires: datetime | None = None
+    """FedEx tracking provider via web scraping."""
 
     @property
     def carrier_id(self) -> Carrier:
@@ -62,164 +60,126 @@ class FedExProvider(CarrierProvider):
     def name(self) -> str:
         return "FedEx"
 
-    @property
-    def requires_api_key(self) -> bool:
-        return True
+    def tracking_url(self, tracking_number: str) -> str:
+        return FEDEX_TRACKING_PAGE.format(tracking_number=tracking_number)
 
     def validate_tracking_number(self, tracking_number: str) -> bool:
         """Validate FedEx tracking number format."""
         tn = tracking_number.strip()
-        # 12-15 digit numeric (Express/Ground)
         if re.match(r"^\d{12,15}$", tn):
             return True
-        # 20-22 digit numeric (SmartPost/96 prefix)
         if re.match(r"^(96\d{18,20})$", tn):
             return True
-        # Door tag numbers (DT prefix)
         if re.match(r"^DT\d{12}$", tn, re.IGNORECASE):
             return True
         return False
 
-    async def _ensure_token(self) -> None:
-        """Obtain or refresh the OAuth access token."""
-        if (
-            self._access_token
-            and self._token_expires
-            and datetime.now() < self._token_expires
-        ):
-            return
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                FEDEX_TOKEN_URL,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self._api_key,
-                    "client_secret": self._secret_key,
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-
-        self._access_token = data["access_token"]
-        expires_in = int(data.get("expires_in", 3600))
-        from datetime import timedelta
-
-        self._token_expires = datetime.now() + timedelta(seconds=expires_in - 60)
-
     async def async_track(self, tracking_number: str) -> TrackingResult:
-        """Track a FedEx package."""
+        """Track a FedEx package by scraping the tracking page."""
         result = TrackingResult(
             carrier=Carrier.FEDEX,
             tracking_number=tracking_number,
         )
 
         try:
-            await self._ensure_token()
-
-            payload = {
-                "trackingInfo": [
-                    {
-                        "trackingNumberInfo": {
-                            "trackingNumber": tracking_number,
-                        }
-                    }
-                ],
-                "includeDetailedScans": True,
-            }
-
-            headers = {
-                "Authorization": f"Bearer {self._access_token}",
-                "Content-Type": "application/json",
-            }
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    FEDEX_TRACK_URL, json=payload, headers=headers
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-
-            results = (
-                data.get("output", {})
-                .get("completeTrackResults", [{}])[0]
-                .get("trackResults", [{}])[0]
-            )
-
-            # Check for errors
-            error = results.get("error")
-            if error:
-                _LOGGER.warning(
-                    "FedEx tracking error: %s", error.get("message", "Unknown")
-                )
-                result.raw_status = error.get("message", "Error")
-                return result
-
-            # Latest status
-            latest = results.get("latestStatusDetail", {})
-            scan_code = latest.get("code", "")
-            description = latest.get("description", "")
-            result.raw_status = description
-
-            # Try scan code first, then description
-            result.status = STATUS_MAPPING.get(
-                scan_code,
-                DESCRIPTION_MAPPING.get(description, TrackingStatus.UNKNOWN),
-            )
-
-            # Estimated delivery
-            delivery_dates = results.get("estimatedDeliveryTimeWindow", {})
-            delivery_window = delivery_dates.get("window", {})
-            ends = delivery_window.get("ends")
-            if ends:
-                try:
-                    result.estimated_delivery = datetime.fromisoformat(
-                        ends.replace("Z", "+00:00")
-                    )
-                except ValueError:
-                    pass
-
-            # Scan events
-            for scan in results.get("scanEvents", []):
-                event = self._parse_scan(scan)
-                if event:
-                    result.events.append(event)
-
+            url = self.tracking_url(tracking_number)
+            html = await self._get_page_content(url, WAIT_SELECTOR)
+            self._parse_tracking_page(html, result)
             result.last_updated = datetime.now()
-
         except Exception:
             _LOGGER.exception("Error tracking FedEx package %s", tracking_number)
 
         return result
 
-    def _parse_scan(self, scan: dict) -> TrackingEvent | None:
-        """Parse a scan event into a TrackingEvent."""
-        description = scan.get("eventDescription", "")
-        scan_code = scan.get("derivedStatusCode", scan.get("eventType", ""))
+    def _parse_tracking_page(self, html: str, result: TrackingResult) -> None:
+        """Parse the FedEx tracking page HTML."""
+        soup = BeautifulSoup(html, "html.parser")
 
-        location_obj = scan.get("scanLocation", {})
-        location_parts = [
-            location_obj.get("city", ""),
-            location_obj.get("stateOrProvinceCode", ""),
-            location_obj.get("countryCode", ""),
+        # Extract main status
+        status_el = soup.select_one(
+            ".shipment-status-progress .status__title, "
+            ".tracking-result .status-label, "
+            ".shipment-status .status-text"
+        )
+        if status_el:
+            raw_status = status_el.get_text(strip=True)
+            result.raw_status = raw_status
+            result.status = self._map_status(raw_status)
+
+        # Extract estimated delivery date
+        eta_el = soup.select_one(
+            ".shipment-status-progress .delivery__date, "
+            ".tracking-result .delivery-date, "
+            ".estimated-delivery .date-value"
+        )
+        if eta_el:
+            eta_text = eta_el.get_text(strip=True)
+            result.estimated_delivery = self._parse_date(eta_text)
+
+        # Extract scan/travel history events
+        event_rows = soup.select(
+            ".travel-history .scan-event, "
+            ".tracking-result .scan-row, "
+            ".shipment-activities .activity-row"
+        )
+        for row in event_rows:
+            event = self._parse_scan_row(row)
+            if event:
+                result.events.append(event)
+
+    def _map_status(self, raw_status: str) -> TrackingStatus:
+        """Map a raw status string to TrackingStatus."""
+        lower = raw_status.lower()
+        for key, status in STATUS_MAPPING.items():
+            if key in lower:
+                return status
+        return TrackingStatus.UNKNOWN
+
+    def _parse_date(self, text: str) -> datetime | None:
+        """Try to parse a date from FedEx date text."""
+        formats = [
+            "%B %d, %Y",
+            "%b %d, %Y",
+            "%m/%d/%Y",
+            "%A, %B %d, %Y",
+            "%A %m/%d/%Y",
         ]
-        location = ", ".join(p for p in location_parts if p)
+        cleaned = re.sub(
+            r"(Estimated delivery|Scheduled delivery|by|on)\s*:?\s*",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip()
+        for fmt in formats:
+            try:
+                return datetime.strptime(cleaned, fmt)
+            except ValueError:
+                continue
+        return None
+
+    def _parse_scan_row(self, row) -> TrackingEvent | None:
+        """Parse a single scan event row from FedEx tracking history."""
+        desc_el = row.select_one(
+            ".scan-event__description, .scan-description, .activity-description"
+        )
+        loc_el = row.select_one(
+            ".scan-event__location, .scan-location, .activity-location"
+        )
+        date_el = row.select_one(
+            ".scan-event__date, .scan-date, .activity-date"
+        )
+
+        description = desc_el.get_text(strip=True) if desc_el else ""
+        location = loc_el.get_text(strip=True) if loc_el else ""
 
         timestamp = datetime.now()
-        date_str = scan.get("date")
-        if date_str:
-            try:
-                timestamp = datetime.fromisoformat(
-                    date_str.replace("Z", "+00:00")
-                )
-            except ValueError:
-                pass
+        if date_el:
+            date_text = date_el.get_text(strip=True)
+            parsed = self._parse_date(date_text)
+            if parsed:
+                timestamp = parsed
 
-        status = STATUS_MAPPING.get(
-            scan_code,
-            DESCRIPTION_MAPPING.get(description, TrackingStatus.UNKNOWN),
-        )
+        status = self._map_status(description)
 
         return TrackingEvent(
             timestamp=timestamp,

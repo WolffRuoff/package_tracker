@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-import re
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from aioresponses import aioresponses
 
-from package_tracker.carriers.usps import STATUS_MAPPING, USPS_TRACKING_URL, USPSProvider
+from package_tracker.carriers.usps import STATUS_MAPPING, USPSProvider
 from package_tracker.const import Carrier, TrackingStatus
-
-USPS_URL_PATTERN = re.compile(r"^https://secure\.shippingapis\.com/ShippingAPI\.dll.*")
 
 
 @pytest.fixture
 def provider():
-    return USPSProvider(api_key="test_user_id")
+    return USPSProvider()
 
 
 class TestValidateTrackingNumber:
@@ -47,115 +43,136 @@ class TestValidateTrackingNumber:
         assert provider.validate_tracking_number("  EA123456789US  ") is True
 
 
-class TestAsyncTrack:
-    """Tests for USPS async_track with mocked API."""
+class TestTrackingUrl:
+    """Tests for tracking URL generation."""
 
-    @pytest.mark.asyncio
-    async def test_successful_tracking(self, provider, usps_xml_success):
-        with aioresponses() as mocked:
-            mocked.get(USPS_URL_PATTERN, body=usps_xml_success)
+    def test_tracking_url(self, provider):
+        url = provider.tracking_url("92001234567890123456")
+        assert "92001234567890123456" in url
+        assert "tools.usps.com" in url
 
-            result = await provider.async_track("92001234567890123456")
 
-        assert result.carrier == Carrier.USPS
-        assert result.tracking_number == "92001234567890123456"
+class TestParseTrackingPage:
+    """Tests for _parse_tracking_page with HTML fixtures."""
+
+    def test_delivered_status(self, provider, usps_delivered_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_delivered_html, result)
+
         assert result.status == TrackingStatus.DELIVERED
-        assert result.raw_status == "Delivered"
-        assert len(result.events) == 3  # summary + 2 details
-        assert result.last_updated is not None
+        assert "delivered" in result.raw_status.lower()
 
-    @pytest.mark.asyncio
-    async def test_estimated_delivery_parsed(self, provider, usps_xml_success):
-        with aioresponses() as mocked:
-            mocked.get(USPS_URL_PATTERN, body=usps_xml_success)
+    def test_delivered_events(self, provider, usps_delivered_html):
+        from package_tracker.carriers.base import TrackingResult
 
-            result = await provider.async_track("92001234567890123456")
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_delivered_html, result)
+
+        assert len(result.events) == 3
+        assert result.events[0].description == "Delivered, In/At Mailbox"
+        assert "Springfield" in result.events[0].location
+
+    def test_delivered_estimated_delivery(self, provider, usps_delivered_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_delivered_html, result)
 
         assert result.estimated_delivery is not None
         assert result.estimated_delivery.month == 1
         assert result.estimated_delivery.day == 15
 
-    @pytest.mark.asyncio
-    async def test_error_in_xml(self, provider, usps_xml_error):
-        with aioresponses() as mocked:
-            mocked.get(USPS_URL_PATTERN, body=usps_xml_error)
+    def test_in_transit_status(self, provider, usps_in_transit_html):
+        from package_tracker.carriers.base import TrackingResult
 
-            result = await provider.async_track("INVALID")
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_in_transit_html, result)
 
-        assert result.status == TrackingStatus.UNKNOWN
-        assert "valid tracking number" in result.raw_status.lower()
+        assert result.status == TrackingStatus.IN_TRANSIT
 
-    @pytest.mark.asyncio
-    async def test_http_error(self, provider):
-        with aioresponses() as mocked:
-            mocked.get(USPS_URL_PATTERN, status=500)
+    def test_in_transit_events(self, provider, usps_in_transit_html):
+        from package_tracker.carriers.base import TrackingResult
 
-            result = await provider.async_track("92001234567890123456")
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_in_transit_html, result)
+
+        assert len(result.events) == 2
+
+    def test_in_transit_estimated_delivery(self, provider, usps_in_transit_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_in_transit_html, result)
+
+        assert result.estimated_delivery is not None
+        assert result.estimated_delivery.month == 1
+        assert result.estimated_delivery.day == 16
+
+    def test_not_found_stays_unknown(self, provider, usps_not_found_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_not_found_html, result)
 
         assert result.status == TrackingStatus.UNKNOWN
         assert result.events == []
 
-    @pytest.mark.asyncio
-    async def test_malformed_xml(self, provider):
-        with aioresponses() as mocked:
-            mocked.get(USPS_URL_PATTERN, body="<not>valid xml")
 
+class TestAsyncTrack:
+    """Tests for async_track with mocked Playwright."""
+
+    @pytest.mark.asyncio
+    async def test_successful_tracking(
+        self, provider, mock_playwright, usps_delivered_html
+    ):
+        mock_cm, mock_page = mock_playwright
+        mock_page.content.return_value = usps_delivered_html
+
+        with patch(
+            "package_tracker.carriers.base.async_playwright", return_value=mock_cm
+        ):
             result = await provider.async_track("92001234567890123456")
 
-        # Should not raise, returns default result
         assert result.carrier == Carrier.USPS
+        assert result.status == TrackingStatus.DELIVERED
+        assert result.last_updated is not None
 
+    @pytest.mark.asyncio
+    async def test_playwright_error_returns_unknown(self, provider, mock_playwright):
+        mock_cm, mock_page = mock_playwright
+        mock_page.goto.side_effect = Exception("Browser error")
 
-class TestParseEvent:
-    """Tests for _parse_event."""
+        with patch(
+            "package_tracker.carriers.base.async_playwright", return_value=mock_cm
+        ):
+            result = await provider.async_track("92001234567890123456")
 
-    def test_parses_location(self, provider):
-        from xml.etree import ElementTree
-
-        xml = """<TrackSummary>
-            <Event>Delivered</Event>
-            <EventDate>January 15, 2025</EventDate>
-            <EventTime>2:30 pm</EventTime>
-            <EventCity>Springfield</EventCity>
-            <EventState>IL</EventState>
-        </TrackSummary>"""
-        element = ElementTree.fromstring(xml)
-        event = provider._parse_event(element)
-
-        assert event is not None
-        assert event.location == "Springfield, IL"
-        assert event.description == "Delivered"
-        assert event.status == TrackingStatus.DELIVERED
-
-    def test_missing_fields(self, provider):
-        from xml.etree import ElementTree
-
-        xml = "<TrackDetail><Event>In Transit</Event></TrackDetail>"
-        element = ElementTree.fromstring(xml)
-        event = provider._parse_event(element)
-
-        assert event is not None
-        assert event.location == ""
-        assert event.description == "In Transit"
+        assert result.status == TrackingStatus.UNKNOWN
+        assert result.events == []
 
 
 class TestStatusMapping:
     """Tests for USPS status mapping."""
 
     def test_delivered(self):
-        assert STATUS_MAPPING["Delivered"] == TrackingStatus.DELIVERED
+        assert STATUS_MAPPING["delivered"] == TrackingStatus.DELIVERED
 
     def test_out_for_delivery(self):
-        assert STATUS_MAPPING["Out for Delivery"] == TrackingStatus.OUT_FOR_DELIVERY
+        assert STATUS_MAPPING["out for delivery"] == TrackingStatus.OUT_FOR_DELIVERY
 
     def test_in_transit(self):
-        assert STATUS_MAPPING["In Transit"] == TrackingStatus.IN_TRANSIT
+        assert STATUS_MAPPING["in transit"] == TrackingStatus.IN_TRANSIT
 
     def test_pre_transit(self):
-        assert STATUS_MAPPING["Shipping Label Created"] == TrackingStatus.PRE_TRANSIT
+        assert STATUS_MAPPING["accepted"] == TrackingStatus.PRE_TRANSIT
 
     def test_exception(self):
-        assert STATUS_MAPPING["Alert"] == TrackingStatus.EXCEPTION
+        assert STATUS_MAPPING["alert"] == TrackingStatus.EXCEPTION
 
     def test_unknown_status_defaults(self):
-        assert STATUS_MAPPING.get("SomethingRandom", TrackingStatus.UNKNOWN) == TrackingStatus.UNKNOWN
+        assert (
+            STATUS_MAPPING.get("SomethingRandom", TrackingStatus.UNKNOWN)
+            == TrackingStatus.UNKNOWN
+        )

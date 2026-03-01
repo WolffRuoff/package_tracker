@@ -2,24 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-from aioresponses import aioresponses
 
-from package_tracker.carriers.ups import (
-    STATUS_MAPPING,
-    UPS_TOKEN_URL,
-    UPS_TRACKING_URL,
-    UPSProvider,
-)
+from package_tracker.carriers.ups import STATUS_MAPPING, UPSProvider
 from package_tracker.const import Carrier, TrackingStatus
 
 
 @pytest.fixture
 def provider():
-    return UPSProvider(client_id="test_id", client_secret="test_secret")
+    return UPSProvider()
 
 
 VALID_TRACKING = "1ZABCDEF1234567890"
@@ -44,141 +37,120 @@ class TestValidateTrackingNumber:
         assert provider.validate_tracking_number("1Z12345E66052722341X") is False
 
 
-class TestOAuthToken:
-    """Tests for UPS OAuth token management."""
+class TestTrackingUrl:
+    """Tests for tracking URL generation."""
 
-    @pytest.mark.asyncio
-    async def test_token_acquisition(self, provider, ups_token_response):
-        with aioresponses() as mocked:
-            mocked.post(UPS_TOKEN_URL, payload=ups_token_response)
+    def test_tracking_url(self, provider):
+        url = provider.tracking_url(VALID_TRACKING)
+        assert VALID_TRACKING in url
+        assert "ups.com" in url
 
-            await provider._ensure_token()
 
-        assert provider._access_token == "test_token_123"
-        assert provider._token_expires is not None
+class TestParseTrackingPage:
+    """Tests for _parse_tracking_page with HTML fixtures."""
 
-    @pytest.mark.asyncio
-    async def test_token_reuse_when_valid(self, provider):
-        provider._access_token = "existing_token"
-        provider._token_expires = datetime.now() + timedelta(hours=1)
+    def test_delivered_status(self, provider, ups_delivered_html):
+        from package_tracker.carriers.base import TrackingResult
 
-        # Should not make any HTTP call
-        await provider._ensure_token()
+        result = TrackingResult(carrier=Carrier.UPS, tracking_number="TEST")
+        provider._parse_tracking_page(ups_delivered_html, result)
 
-        assert provider._access_token == "existing_token"
+        assert result.status == TrackingStatus.DELIVERED
+        assert "delivered" in result.raw_status.lower()
 
-    @pytest.mark.asyncio
-    async def test_token_refresh_when_expired(self, provider, ups_token_response):
-        provider._access_token = "old_token"
-        provider._token_expires = datetime.now() - timedelta(hours=1)
+    def test_delivered_events(self, provider, ups_delivered_html):
+        from package_tracker.carriers.base import TrackingResult
 
-        with aioresponses() as mocked:
-            mocked.post(UPS_TOKEN_URL, payload=ups_token_response)
+        result = TrackingResult(carrier=Carrier.UPS, tracking_number="TEST")
+        provider._parse_tracking_page(ups_delivered_html, result)
 
-            await provider._ensure_token()
+        assert len(result.events) == 3
+        assert "Delivered" in result.events[0].description
 
-        assert provider._access_token == "test_token_123"
+    def test_delivered_estimated_delivery(self, provider, ups_delivered_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.UPS, tracking_number="TEST")
+        provider._parse_tracking_page(ups_delivered_html, result)
+
+        assert result.estimated_delivery is not None
+        assert result.estimated_delivery.month == 1
+        assert result.estimated_delivery.day == 15
+
+    def test_in_transit_status(self, provider, ups_in_transit_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.UPS, tracking_number="TEST")
+        provider._parse_tracking_page(ups_in_transit_html, result)
+
+        assert result.status == TrackingStatus.IN_TRANSIT
+
+    def test_in_transit_events(self, provider, ups_in_transit_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.UPS, tracking_number="TEST")
+        provider._parse_tracking_page(ups_in_transit_html, result)
+
+        assert len(result.events) == 2
+
+    def test_not_found_stays_unknown(self, provider, ups_not_found_html):
+        from package_tracker.carriers.base import TrackingResult
+
+        result = TrackingResult(carrier=Carrier.UPS, tracking_number="TEST")
+        provider._parse_tracking_page(ups_not_found_html, result)
+
+        assert result.status == TrackingStatus.UNKNOWN
+        assert result.events == []
 
 
 class TestAsyncTrack:
-    """Tests for UPS async_track with mocked API."""
+    """Tests for async_track with mocked Playwright."""
 
     @pytest.mark.asyncio
     async def test_successful_tracking(
-        self, provider, ups_token_response, ups_json_success
+        self, provider, mock_playwright, ups_delivered_html
     ):
-        url = UPS_TRACKING_URL.format(tracking_number=VALID_TRACKING)
+        mock_cm, mock_page = mock_playwright
+        mock_page.content.return_value = ups_delivered_html
 
-        with aioresponses() as mocked:
-            mocked.post(UPS_TOKEN_URL, payload=ups_token_response)
-            mocked.get(url, payload=ups_json_success)
-
+        with patch(
+            "package_tracker.carriers.base.async_playwright", return_value=mock_cm
+        ):
             result = await provider.async_track(VALID_TRACKING)
 
         assert result.carrier == Carrier.UPS
         assert result.status == TrackingStatus.DELIVERED
-        assert result.raw_status == "Delivered"
-        assert len(result.events) == 2
+        assert len(result.events) == 3
         assert result.last_updated is not None
 
     @pytest.mark.asyncio
-    async def test_delivery_date_parsed(
-        self, provider, ups_token_response, ups_json_success
-    ):
-        url = UPS_TRACKING_URL.format(tracking_number=VALID_TRACKING)
+    async def test_playwright_error_returns_unknown(self, provider, mock_playwright):
+        mock_cm, mock_page = mock_playwright
+        mock_page.goto.side_effect = Exception("Browser error")
 
-        with aioresponses() as mocked:
-            mocked.post(UPS_TOKEN_URL, payload=ups_token_response)
-            mocked.get(url, payload=ups_json_success)
-
-            result = await provider.async_track(VALID_TRACKING)
-
-        assert result.estimated_delivery is not None
-        assert result.estimated_delivery.year == 2025
-        assert result.estimated_delivery.month == 1
-        assert result.estimated_delivery.day == 15
-
-    @pytest.mark.asyncio
-    async def test_http_error(self, provider, ups_token_response):
-        url = UPS_TRACKING_URL.format(tracking_number=VALID_TRACKING)
-
-        with aioresponses() as mocked:
-            mocked.post(UPS_TOKEN_URL, payload=ups_token_response)
-            mocked.get(url, status=500)
-
+        with patch(
+            "package_tracker.carriers.base.async_playwright", return_value=mock_cm
+        ):
             result = await provider.async_track(VALID_TRACKING)
 
         assert result.status == TrackingStatus.UNKNOWN
         assert result.events == []
 
 
-class TestParseActivity:
-    """Tests for _parse_activity."""
-
-    def test_parses_complete_activity(self, provider):
-        activity = {
-            "status": {"type": "D", "description": "Delivered"},
-            "location": {
-                "address": {
-                    "city": "Springfield",
-                    "stateProvince": "IL",
-                    "countryCode": "US",
-                }
-            },
-            "date": "20250115",
-            "time": "143000",
-        }
-        event = provider._parse_activity(activity)
-
-        assert event is not None
-        assert event.location == "Springfield, IL, US"
-        assert event.description == "Delivered"
-        assert event.status == TrackingStatus.DELIVERED
-
-    def test_missing_fields(self, provider):
-        activity = {"status": {"type": "I", "description": "In Transit"}}
-        event = provider._parse_activity(activity)
-
-        assert event is not None
-        assert event.location == ""
-        assert event.description == "In Transit"
-        assert event.status == TrackingStatus.IN_TRANSIT
-
-
 class TestStatusMapping:
     """Tests for UPS status mapping."""
 
     def test_delivered(self):
-        assert STATUS_MAPPING["D"] == TrackingStatus.DELIVERED
+        assert STATUS_MAPPING["delivered"] == TrackingStatus.DELIVERED
 
     def test_in_transit(self):
-        assert STATUS_MAPPING["I"] == TrackingStatus.IN_TRANSIT
+        assert STATUS_MAPPING["in transit"] == TrackingStatus.IN_TRANSIT
 
     def test_out_for_delivery(self):
-        assert STATUS_MAPPING["O"] == TrackingStatus.OUT_FOR_DELIVERY
+        assert STATUS_MAPPING["out for delivery"] == TrackingStatus.OUT_FOR_DELIVERY
 
     def test_pre_transit(self):
-        assert STATUS_MAPPING["M"] == TrackingStatus.PRE_TRANSIT
+        assert STATUS_MAPPING["order processed"] == TrackingStatus.PRE_TRANSIT
 
     def test_exception(self):
-        assert STATUS_MAPPING["X"] == TrackingStatus.EXCEPTION
+        assert STATUS_MAPPING["exception"] == TrackingStatus.EXCEPTION

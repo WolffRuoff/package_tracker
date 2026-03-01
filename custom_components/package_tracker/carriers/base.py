@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ..const import Carrier, TrackingStatus
+from playwright.async_api import async_playwright
+
+from ..const import DEFAULT_USER_AGENT, Carrier, TrackingStatus
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,10 +50,9 @@ class CarrierProvider(ABC):
     def name(self) -> str:
         """Return the carrier display name."""
 
-    @property
     @abstractmethod
-    def requires_api_key(self) -> bool:
-        """Return whether this carrier requires an API key."""
+    def tracking_url(self, tracking_number: str) -> str:
+        """Return the public tracking page URL for a tracking number."""
 
     @abstractmethod
     async def async_track(self, tracking_number: str) -> TrackingResult:
@@ -57,3 +61,21 @@ class CarrierProvider(ABC):
     @abstractmethod
     def validate_tracking_number(self, tracking_number: str) -> bool:
         """Return True if the tracking number matches this carrier's format."""
+
+    async def _get_page_content(self, url: str, wait_selector: str) -> str:
+        """Use Playwright to fetch fully rendered page HTML.
+
+        Launches headless Chromium, navigates to url, waits for
+        wait_selector to appear, then returns the full page HTML.
+        """
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            context = await browser.new_context(user_agent=DEFAULT_USER_AGENT)
+            page = await context.new_page()
+            try:
+                await page.goto(url, wait_until="domcontentloaded")
+                await page.wait_for_selector(wait_selector, timeout=15000)
+                content = await page.content()
+            finally:
+                await browser.close()
+        return content
