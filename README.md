@@ -30,17 +30,44 @@ A HACS custom integration that tracks shipping packages from USPS, UPS, and FedE
 
 ## Setup
 
+This integration has two components: a **scraper container** that fetches tracking data, and a **HACS integration** that displays it in Home Assistant.
+
+### 1. Deploy the Scraper Container
+
+Run the scraper as a Docker container on your network (e.g. on the same host as Home Assistant):
+
+```yaml
+# docker-compose.yml
+services:
+  scraper:
+    image: wolffruoff/package-tracker-scraper:latest
+    container_name: package-tracker-scraper
+    ports:
+      - "8230:8230"
+    volumes:
+      - scraper-data:/data
+    environment:
+      - PORT=8230
+      - DB_PATH=/data/package_tracker.db
+    restart: unless-stopped
+
+volumes:
+  scraper-data:
+```
+
+```bash
+docker compose up -d
+```
+
+### 2. Install the HACS Integration
+
+Follow the [Installation](#installation) steps above.
+
+### 3. Connect to the Scraper
+
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
 2. Search for "Package Tracker"
-3. Enter your API keys for the carriers you want to use (leave blank to skip)
-
-### Getting API Keys
-
-| Carrier | Portal | Notes |
-|---------|--------|-------|
-| USPS | [USPS Developer Portal](https://developers.usps.com/) | OAuth Client ID + Secret |
-| UPS | [UPS Developer Portal](https://developer.ups.com/) | OAuth Client ID + Secret |
-| FedEx | [FedEx Developer Portal](https://developer.fedex.com/) | API Key + Secret Key |
+3. Enter the scraper URL (e.g. `http://localhost:8230`)
 
 ## Adding Packages
 
@@ -82,22 +109,19 @@ Each tracked package creates a sensor with these attributes:
 
 ## Development / Testing
 
-Install test dependencies:
+First-time setup (installs uv, Python 3.12, and all dependencies):
 
 ```bash
-pip install -e ".[test]"
+make setup
 ```
 
-Run the test suite:
+Run tests:
 
 ```bash
-pytest
-```
-
-Run with coverage:
-
-```bash
-pytest --cov
+make test           # HA integration tests
+make test-scraper   # Scraper tests
+make test-all       # Both
+make coverage       # Tests with coverage
 ```
 
 CI requires all tests to pass before merging.

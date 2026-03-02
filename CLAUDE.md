@@ -52,7 +52,7 @@ make docker-stop      # Stop scraper container
 
 ## Scraper Container (`scraper/`)
 
-FastAPI app on port 8230 (configurable via `PORT` env var). SQLite DB at `/data/package_tracker.db` (Docker volume).
+FastAPI app on port 8230 (configurable via `PORT` env var). SQLite DB at `/data/package_tracker.db` (Docker volume). Docker Hub image: `wolffruoff/package-tracker-scraper`.
 
 **REST API:**
 - `GET /api/packages` — all packages with latest tracking results
@@ -80,6 +80,11 @@ FastAPI app on port 8230 (configurable via `PORT` env var). SQLite DB at `/data/
 **HA integration tests** (`tests/`): Uses `pytest` + `pytest-asyncio`. Mock `aiohttp` responses via `mock_scraper_api` fixture. Carrier tests cover validation + URL only.
 
 **Scraper tests** (`scraper/tests/`): Uses `pytest` + `pytest-asyncio`. HTML fixtures in `scraper/tests/fixtures/`. Storage tests use in-memory SQLite. API tests use `httpx` `AsyncClient` with FastAPI's ASGI transport.
+
+## CI/CD
+
+- **`validate.yml`** — runs on PRs and pushes to `main`. Two jobs: HACS validation (`hacs/action@main`) and tests (`pytest` with Codecov upload).
+- **`release.yml`** — runs on pushes to `main`. Auto-determines version bump from conventional commits (`feat:` → minor, `BREAKING CHANGE` → major, else patch). Updates `manifest.json` version, creates a git tag + GitHub Release, then builds and pushes the scraper Docker image to `wolffruoff/package-tracker-scraper` on Docker Hub (tagged `latest` + version).
 
 ## Key Conventions
 

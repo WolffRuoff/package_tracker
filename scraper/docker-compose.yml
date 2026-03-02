@@ -1,6 +1,6 @@
 services:
   scraper:
-    build: .
+    image: wolffruoff/package-tracker-scraper:latest
     container_name: package-tracker-scraper
     ports:
       - "8230:8230"
