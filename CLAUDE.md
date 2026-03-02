@@ -4,51 +4,88 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Home Assistant custom integration (HACS) for tracking shipping packages from USPS, UPS, and FedEx. Combines a Python backend (HA integration) with a TypeScript frontend (Lovelace card). Domain: `package_tracker`.
+Home Assistant custom integration (HACS) for tracking shipping packages from USPS, UPS, and FedEx. Split into two components:
 
-## Build Commands
+1. **Scraper container** (`scraper/`) — standalone Docker app running Playwright + Chromium, scrapes carrier pages, exposes results via REST API
+2. **HACS integration** (`custom_components/package_tracker/`) — lightweight HA integration (no browser deps) that polls the scraper API and exposes sensor entities + Lovelace card
 
-**Frontend card** (from `frontend-src/`):
-```bash
-cd frontend-src && npm install && npm run build
-```
-This compiles TypeScript → `custom_components/package_tracker/frontend/package-tracker-card.js` via Rollup.
-
-**HACS validation** (CI runs automatically on push/PR to main):
-```bash
-# Locally via the HACS action container, or just push and check GitHub Actions
-```
-
-**Tests** (from repo root):
-```bash
-pip install -e ".[test]"
-playwright install chromium
-pytest --cov
-```
+Domain: `package_tracker`.
 
 ## Architecture
 
-**Data flow:** Config flow (no API keys required) → Coordinator creates all carrier providers → Coordinator scrapes carrier tracking pages every ~30 min (with jitter) → Sensor entities expose tracking data → Frontend card auto-discovers `sensor.package_tracker_*` entities.
+```
+HA Config Flow ──► Scraper API (add/remove packages)
+                        │
+                   Scraper polls carriers
+                   every ~30min via Playwright
+                        │
+HA Coordinator ◄── GET /api/packages (polling)
+       │
+   Sensor Entities + Lovelace Card
+```
 
-**Carrier provider pattern:** Abstract `CarrierProvider` in `carriers/base.py` defines the interface. Each carrier (USPS/UPS/FedEx) implements `async_track()`, `validate_tracking_number()`, and `tracking_url()`. The base class provides `_get_page_content(url, wait_selector)` which uses Playwright (headless Chromium) to fetch fully rendered page HTML. Each carrier's `_parse_tracking_page(html, result)` uses BeautifulSoup to extract status, events, and delivery dates from the rendered HTML. Adding a new carrier requires: one new file in `carriers/`, one entry in the `CARRIER_PROVIDERS` dict in `carriers/__init__.py`, and updating the `Carrier` enum in `const.py`.
+- **HA is the UI layer** — users manage packages via HA config flow, which forwards add/remove to the scraper
+- **Scraper is the data layer** — owns the package list in SQLite, runs the polling scheduler, caches results
+- **Communication** — HA coordinator polls `GET /api/packages` on a 30-min jittered interval
 
-**Web scraping approach:** No API keys needed. Each carrier provider navigates to the carrier's public tracking page, waits for tracking content to render (handles JS-rendered SPAs), then parses the HTML. A randomized scan interval (±5 min jitter around 30 min) avoids bot-like request patterns.
+## Build Commands
 
-**Single coordinator for all packages:** `PackageTrackerCoordinator` in `coordinator.py` polls every carrier for every tracked package in one update cycle. On per-package failure, it retains previous data rather than clearing it.
+First-time setup (installs uv if missing, Python 3.12, and all deps):
+```bash
+make setup
+```
 
-**Package management via options flow:** One integration config entry holds an empty `data` dict and the package list in `options`. Adding/removing packages triggers `_async_update_listener` which reloads the entire integration.
+Individual targets:
+```bash
+make install          # uv sync for HA integration (includes dev deps)
+make install-scraper  # uv sync for scraper (includes dev deps)
+make test             # Run HA integration tests
+make test-scraper     # Run scraper tests
+make test-all         # Run all tests
+make coverage         # Run tests with coverage
+make lint             # Run linter
+make build-card       # Build frontend Lovelace card
+make docker-build     # Build scraper Docker image
+make docker-run       # Run scraper container locally
+make docker-stop      # Stop scraper container
+```
 
-**Embedded frontend:** The Lovelace card JS is served via `hass.http.register_static_path()` in `__init__.py`, so the card ships with the integration—no separate HACS frontend install. Each package row includes a "view on website" link that opens the carrier's tracking page in a new tab.
+## Scraper Container (`scraper/`)
+
+FastAPI app on port 8230 (configurable via `PORT` env var). SQLite DB at `/data/package_tracker.db` (Docker volume).
+
+**REST API:**
+- `GET /api/packages` — all packages with latest tracking results
+- `POST /api/packages` — add package `{tracking_number, carrier, label}`
+- `DELETE /api/packages/{tracking_number}` — remove package
+- `POST /api/packages/{tracking_number}/refresh` — force re-scrape
+- `GET /api/health` — health check
+
+**Carrier provider pattern (scraper side):** Abstract `CarrierProvider` in `scraper/carriers/base.py`. Each carrier implements `async_track(tracking_number, browser)`, `validate_tracking_number()`, and `tracking_url()`. The base class provides `_get_page_content(browser, url, wait_selector)` using a shared Playwright browser instance. Each carrier's `_parse_tracking_page(html, result)` uses BeautifulSoup.
+
+**Scheduler:** Background asyncio task, 30-min interval with ±5-min jitter. Browser launched once at startup via FastAPI lifespan, reused across all scrapes.
+
+## HACS Integration (`custom_components/package_tracker/`)
+
+**No browser dependencies** — requirements list is empty. Communicates with scraper via `api_client.py` (wraps aiohttp calls).
+
+**Config flow:** Initial setup collects scraper URL, validates via `GET /api/health`. Config version 2. Options flow forwards add/remove to scraper API.
+
+**Coordinator:** Polls `GET /api/packages` from scraper, parses JSON into `TrackingResult` objects. Keeps jittered interval and delivered auto-removal logic HA-side.
+
+**Carrier providers (HA side):** Stripped to validation + URL only. No scraping, no Playwright, no BeautifulSoup. Used for `detect_carrier()` auto-detection and tracking URL generation.
 
 ## Testing
 
-Tests live in `tests/` at the repo root. Uses `pytest` + `pytest-asyncio`. Carrier tracking page HTML fixtures are stored in `tests/fixtures/{usps,ups,fedex}/` — tests parse these directly via `_parse_tracking_page()` and mock Playwright at the browser level for `async_track()` tests.
+**HA integration tests** (`tests/`): Uses `pytest` + `pytest-asyncio`. Mock `aiohttp` responses via `mock_scraper_api` fixture. Carrier tests cover validation + URL only.
+
+**Scraper tests** (`scraper/tests/`): Uses `pytest` + `pytest-asyncio`. HTML fixtures in `scraper/tests/fixtures/`. Storage tests use in-memory SQLite. API tests use `httpx` `AsyncClient` with FastAPI's ASGI transport.
 
 ## Key Conventions
 
-- All carrier tracking uses Playwright (headless Chromium) + BeautifulSoup for web scraping
-- `TrackingResult` and `TrackingEvent` are dataclasses in `carriers/base.py` — all providers return these
-- `detect_carrier()` in `carriers/__init__.py` runs each provider's `validate_tracking_number()` to auto-detect carrier from tracking number format
-- Frontend uses Lit 3.x with TypeScript decorators (`@customElement`, `@property`, `@state`); strict mode enabled
-- Sensor unique IDs follow pattern `package_tracker_{tracking_number}`
-- Sensor `extra_state_attributes` includes `tracking_url` for the carrier's public tracking page
+- `TrackingResult` and `TrackingEvent` are dataclasses — defined in both `carriers/base.py` (HA side) and `scraper/carriers/base.py` (scraper side)
+- HA-side `TrackingResult` has an extra `tracking_url` field populated from scraper API response
+- `detect_carrier()` in `carriers/__init__.py` runs each provider's `validate_tracking_number()` to auto-detect carrier
+- Frontend uses Lit 3.x with TypeScript decorators; strict mode enabled
+- Sensor unique IDs: `package_tracker_{tracking_number}`
+- Sensor `extra_state_attributes` includes `tracking_url` from scraper API

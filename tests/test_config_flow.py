@@ -11,7 +11,10 @@ from package_tracker.config_flow import (
     PackageTrackerOptionsFlow,
 )
 from package_tracker.const import (
+    CONF_AUTO_REMOVE_DAYS,
     CONF_PACKAGES,
+    CONF_SCRAPER_URL,
+    DEFAULT_SCRAPER_URL,
     Carrier,
 )
 
@@ -30,10 +33,11 @@ def config_flow():
     return flow
 
 
-def _make_options_flow(packages):
+def _make_options_flow(packages, scraper_url=DEFAULT_SCRAPER_URL):
     """Create an options flow, patching HA's frame detection."""
     config_entry = MagicMock()
     config_entry.options = {CONF_PACKAGES: packages}
+    config_entry.data = {CONF_SCRAPER_URL: scraper_url}
 
     with patch("homeassistant.config_entries.report_usage"):
         flow = PackageTrackerOptionsFlow(config_entry)
@@ -55,8 +59,8 @@ def _make_options_flow(packages):
 
 
 @pytest.fixture
-def options_flow():
-    return _make_options_flow(
+def options_flow(mock_scraper_api):
+    flow = _make_options_flow(
         [
             {
                 "label": "Test Package",
@@ -65,6 +69,7 @@ def options_flow():
             }
         ]
     )
+    return flow
 
 
 class TestConfigFlowUser:
@@ -76,11 +81,57 @@ class TestConfigFlowUser:
         assert result["type"] == "form"
 
     @pytest.mark.asyncio
-    async def test_creates_entry_without_api_keys(self, config_flow):
-        result = await config_flow.async_step_user({})
+    async def test_creates_entry_with_valid_scraper_url(self, config_flow):
+        """Successful connection creates entry with scraper URL in data."""
+        with patch(
+            "package_tracker.config_flow.aiohttp.ClientSession"
+        ) as mock_session_cls:
+            mock_session = AsyncMock()
+            mock_session_cls.return_value = mock_session
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+
+            # Mock the health check to succeed
+            mock_resp = AsyncMock()
+            mock_resp.status = 200
+            mock_resp.json = AsyncMock(
+                return_value={"status": "ok", "version": "2.0.0"}
+            )
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=mock_resp)
+
+            result = await config_flow.async_step_user(
+                {CONF_SCRAPER_URL: "http://localhost:8230"}
+            )
+
         assert result["type"] == "create_entry"
-        assert result["data"] == {}
+        assert result["data"][CONF_SCRAPER_URL] == "http://localhost:8230"
         assert result["options"] == {CONF_PACKAGES: []}
+
+    @pytest.mark.asyncio
+    async def test_shows_error_on_connection_failure(self, config_flow):
+        """Failed connection shows error."""
+        with patch(
+            "package_tracker.config_flow.aiohttp.ClientSession"
+        ) as mock_session_cls:
+            mock_session = AsyncMock()
+            mock_session_cls.return_value = mock_session
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+
+            import aiohttp
+
+            mock_session.get = MagicMock(
+                side_effect=aiohttp.ClientError("Connection refused")
+            )
+
+            result = await config_flow.async_step_user(
+                {CONF_SCRAPER_URL: "http://bad-host:9999"}
+            )
+
+        assert result["type"] == "form"
+        assert result["errors"][CONF_SCRAPER_URL] == "cannot_connect"
 
 
 class TestOptionsFlowAddPackage:
@@ -98,13 +149,30 @@ class TestOptionsFlowAddPackage:
 
     @pytest.mark.asyncio
     async def test_add_package_auto_detects_carrier(self, options_flow):
-        result = await options_flow.async_step_add_package(
-            {
-                "label": "New Package",
-                "tracking_number": "1Z12345E6605272234",
-                "carrier": "",
-            }
-        )
+        with patch(
+            "package_tracker.config_flow.aiohttp.ClientSession"
+        ) as mock_session_cls:
+            mock_session = AsyncMock()
+            mock_session_cls.return_value = mock_session
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+
+            mock_resp = AsyncMock()
+            mock_resp.status = 201
+            mock_resp.content_length = 100
+            mock_resp.json = AsyncMock(return_value={})
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=False)
+            mock_session.post = MagicMock(return_value=mock_resp)
+
+            result = await options_flow.async_step_add_package(
+                {
+                    "label": "New Package",
+                    "tracking_number": "1Z12345E6605272234",
+                    "carrier": "",
+                }
+            )
+
         assert result["type"] == "create_entry"
         packages = result["data"][CONF_PACKAGES]
         added = [p for p in packages if p["tracking_number"] == "1Z12345E6605272234"]
@@ -137,13 +205,30 @@ class TestOptionsFlowAddPackage:
 
     @pytest.mark.asyncio
     async def test_add_package_with_explicit_carrier(self, options_flow):
-        result = await options_flow.async_step_add_package(
-            {
-                "label": "FedEx Package",
-                "tracking_number": "123456789012",
-                "carrier": "fedex",
-            }
-        )
+        with patch(
+            "package_tracker.config_flow.aiohttp.ClientSession"
+        ) as mock_session_cls:
+            mock_session = AsyncMock()
+            mock_session_cls.return_value = mock_session
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+
+            mock_resp = AsyncMock()
+            mock_resp.status = 201
+            mock_resp.content_length = 100
+            mock_resp.json = AsyncMock(return_value={})
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=False)
+            mock_session.post = MagicMock(return_value=mock_resp)
+
+            result = await options_flow.async_step_add_package(
+                {
+                    "label": "FedEx Package",
+                    "tracking_number": "123456789012",
+                    "carrier": "fedex",
+                }
+            )
+
         assert result["type"] == "create_entry"
         packages = result["data"][CONF_PACKAGES]
         added = [p for p in packages if p["tracking_number"] == "123456789012"]
@@ -160,9 +245,24 @@ class TestOptionsFlowRemovePackage:
 
     @pytest.mark.asyncio
     async def test_remove_package(self, options_flow):
-        result = await options_flow.async_step_remove_package(
-            {"package": "92001234567890123456"}
-        )
+        with patch(
+            "package_tracker.config_flow.aiohttp.ClientSession"
+        ) as mock_session_cls:
+            mock_session = AsyncMock()
+            mock_session_cls.return_value = mock_session
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+
+            mock_resp = AsyncMock()
+            mock_resp.status = 204
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=False)
+            mock_session.delete = MagicMock(return_value=mock_resp)
+
+            result = await options_flow.async_step_remove_package(
+                {"package": "92001234567890123456"}
+            )
+
         assert result["type"] == "create_entry"
         packages = result["data"][CONF_PACKAGES]
         assert len(packages) == 0
@@ -174,3 +274,28 @@ class TestOptionsFlowRemovePackage:
         result = await flow.async_step_remove_package(None)
         assert result["type"] == "abort"
         assert result["reason"] == "no_packages"
+
+
+class TestOptionsFlowSettings:
+    """Tests for the settings step in options flow."""
+
+    @pytest.mark.asyncio
+    async def test_menu_includes_settings(self, options_flow):
+        result = await options_flow.async_step_init(None)
+        assert result["type"] == "menu"
+        assert "settings" in result["menu_options"]
+
+    @pytest.mark.asyncio
+    async def test_settings_shows_form_with_default(self, options_flow):
+        result = await options_flow.async_step_settings(None)
+        assert result["type"] == "form"
+        assert result["step_id"] == "settings"
+
+    @pytest.mark.asyncio
+    async def test_settings_saves_value_and_preserves_packages(self, options_flow):
+        result = await options_flow.async_step_settings(
+            {CONF_AUTO_REMOVE_DAYS: 3}
+        )
+        assert result["type"] == "create_entry"
+        assert result["data"][CONF_AUTO_REMOVE_DAYS] == 3
+        assert len(result["data"][CONF_PACKAGES]) == 1

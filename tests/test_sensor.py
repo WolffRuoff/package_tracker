@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from package_tracker.carriers.base import TrackingEvent, TrackingResult
-from package_tracker.carriers.usps import USPSProvider
 from package_tracker.const import CONF_PACKAGES, DOMAIN, Carrier, TrackingStatus
 from package_tracker.sensor import PackageTrackerSensor, async_setup_entry
 
@@ -25,6 +24,7 @@ def mock_coordinator():
             raw_status="Delivered",
             last_updated=datetime(2025, 1, 15, 14, 30),
             estimated_delivery=datetime(2025, 1, 15),
+            tracking_url="https://tools.usps.com/go/TrackConfirmAction?tLabels=92001234567890123456",
             events=[
                 TrackingEvent(
                     timestamp=datetime(2025, 1, 15, 14, 30),
@@ -35,9 +35,6 @@ def mock_coordinator():
             ],
         )
     }
-    # Set up provider for tracking_url
-    usps_provider = USPSProvider()
-    coordinator._providers = {Carrier.USPS: usps_provider}
     return coordinator
 
 
@@ -59,6 +56,7 @@ def sensor(mock_coordinator, package_info):
         s._tracking_number = package_info["tracking_number"]
         s._label = package_info["label"]
         s._carrier = package_info["carrier"]
+        s._delivered_at = package_info.get("delivered_at")
         s._attr_unique_id = f"package_tracker_{package_info['tracking_number']}"
         s._attr_name = package_info["label"]
         s._attr_icon = "mdi:package-variant"
@@ -90,6 +88,7 @@ class TestAsyncSetupEntry:
             self._tracking_number = pkg["tracking_number"]
             self._label = pkg["label"]
             self._carrier = pkg["carrier"]
+            self._delivered_at = pkg.get("delivered_at")
             self._attr_unique_id = f"package_tracker_{pkg['tracking_number']}"
             self._attr_name = pkg["label"]
             self._attr_icon = "mdi:package-variant"
@@ -151,3 +150,13 @@ class TestExtraStateAttributes:
         attrs = sensor.extra_state_attributes
         assert attrs["label"] == "Test Package"
         assert "raw_status" not in attrs
+
+    def test_delivered_at_present_when_set(self, sensor):
+        sensor._delivered_at = "2025-01-15T14:30:00+00:00"
+        attrs = sensor.extra_state_attributes
+        assert attrs["delivered_at"] == "2025-01-15T14:30:00+00:00"
+
+    def test_delivered_at_absent_when_not_set(self, sensor):
+        sensor._delivered_at = None
+        attrs = sensor.extra_state_attributes
+        assert "delivered_at" not in attrs

@@ -3,8 +3,17 @@
     "step": {
       "user": {
         "title": "Package Tracker",
-        "description": "No API keys required. Package tracking data is retrieved directly from carrier websites."
+        "description": "Connect to your Package Tracker scraper container.",
+        "data": {
+          "scraper_url": "Scraper URL"
+        },
+        "data_description": {
+          "scraper_url": "URL of the Package Tracker scraper container (e.g. http://localhost:8230)."
+        }
       }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the scraper. Verify the URL and that the container is running."
     }
   },
   "options": {
@@ -14,7 +23,8 @@
         "description": "Manage your tracked packages.",
         "menu_options": {
           "add_package": "Add a package",
-          "remove_package": "Remove a package"
+          "remove_package": "Remove a package",
+          "settings": "Settings"
         }
       },
       "add_package": {
@@ -32,11 +42,22 @@
         "data": {
           "package": "Package"
         }
+      },
+      "settings": {
+        "title": "Settings",
+        "description": "Configure auto-removal of delivered packages.",
+        "data": {
+          "auto_remove_days": "Auto-remove after (days)"
+        },
+        "data_description": {
+          "auto_remove_days": "Number of days after delivery to automatically remove a package. Set to 0 to disable."
+        }
       }
     },
     "error": {
       "cannot_detect_carrier": "Could not detect carrier. Please select one manually.",
-      "already_tracked": "This tracking number is already being tracked."
+      "already_tracked": "This tracking number is already being tracked.",
+      "scraper_error": "Could not communicate with the scraper. The package was not added."
     },
     "abort": {
       "no_packages": "No packages to remove."

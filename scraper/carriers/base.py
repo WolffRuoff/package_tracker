@@ -1,12 +1,17 @@
-"""Base classes for carrier providers (HA integration side — validation only)."""
+"""Abstract base classes for carrier providers (scraper side)."""
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ..const import Carrier, TrackingStatus
+from playwright.async_api import Browser, Page
+
+from ..const import DEFAULT_USER_AGENT, Carrier, TrackingStatus
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -30,11 +35,10 @@ class TrackingResult:
     events: list[TrackingEvent] = field(default_factory=list)
     last_updated: datetime | None = None
     raw_status: str = ""
-    tracking_url: str | None = None
 
 
 class CarrierProvider(ABC):
-    """Abstract base class for carrier providers (validation + URL only)."""
+    """Abstract base class for carrier providers."""
 
     @property
     @abstractmethod
@@ -51,5 +55,25 @@ class CarrierProvider(ABC):
         """Return the public tracking page URL for a tracking number."""
 
     @abstractmethod
+    async def async_track(
+        self, tracking_number: str, browser: Browser
+    ) -> TrackingResult:
+        """Track a package and return the result."""
+
+    @abstractmethod
     def validate_tracking_number(self, tracking_number: str) -> bool:
         """Return True if the tracking number matches this carrier's format."""
+
+    async def _get_page_content(
+        self, browser: Browser, url: str, wait_selector: str
+    ) -> str:
+        """Use a shared browser instance to fetch fully rendered page HTML."""
+        context = await browser.new_context(user_agent=DEFAULT_USER_AGENT)
+        page = await context.new_page()
+        try:
+            await page.goto(url, wait_until="domcontentloaded")
+            await page.wait_for_selector(wait_selector, timeout=15000)
+            content = await page.content()
+        finally:
+            await context.close()
+        return content

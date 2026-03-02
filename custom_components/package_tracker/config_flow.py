@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -14,9 +15,14 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
+from .api_client import ScraperApiClient, ScraperApiError
 from .carriers import detect_carrier
 from .const import (
+    CONF_AUTO_REMOVE_DAYS,
     CONF_PACKAGES,
+    CONF_SCRAPER_URL,
+    DEFAULT_AUTO_REMOVE_DAYS,
+    DEFAULT_SCRAPER_URL,
     DOMAIN,
     Carrier,
 )
@@ -25,22 +31,42 @@ from .const import (
 class PackageTrackerConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial config flow for Package Tracker."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the user step — simple confirmation, no API keys needed."""
+        """Handle the user step — collect scraper URL and validate connection."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            return self.async_create_entry(
-                title="Package Tracker",
-                data={},
-                options={CONF_PACKAGES: []},
-            )
+            scraper_url = user_input[CONF_SCRAPER_URL].rstrip("/")
+
+            # Validate connection to scraper
+            try:
+                async with aiohttp.ClientSession() as session:
+                    client = ScraperApiClient(scraper_url, session)
+                    await client.async_health()
+            except (ScraperApiError, aiohttp.ClientError):
+                errors[CONF_SCRAPER_URL] = "cannot_connect"
+
+            if not errors:
+                return self.async_create_entry(
+                    title="Package Tracker",
+                    data={CONF_SCRAPER_URL: scraper_url},
+                    options={CONF_PACKAGES: []},
+                )
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema({}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_SCRAPER_URL, default=DEFAULT_SCRAPER_URL
+                    ): str,
+                }
+            ),
+            errors=errors,
         )
 
     @staticmethod
@@ -61,7 +87,7 @@ class PackageTrackerOptionsFlow(OptionsFlowWithConfigEntry):
         """Show the menu: add or remove packages."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add_package", "remove_package"],
+            menu_options=["add_package", "remove_package", "settings"],
         )
 
     async def async_step_add_package(
@@ -90,6 +116,20 @@ class PackageTrackerOptionsFlow(OptionsFlowWithConfigEntry):
                     if pkg["tracking_number"] == tracking_number:
                         errors["tracking_number"] = "already_tracked"
                         break
+
+            if not errors:
+                # Forward add to scraper API
+                scraper_url = self.config_entry.data.get(
+                    CONF_SCRAPER_URL, DEFAULT_SCRAPER_URL
+                )
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        client = ScraperApiClient(scraper_url, session)
+                        await client.async_add_package(
+                            tracking_number, carrier, label
+                        )
+                except (ScraperApiError, aiohttp.ClientError):
+                    errors["base"] = "scraper_error"
 
             if not errors:
                 packages.append(
@@ -127,6 +167,18 @@ class PackageTrackerOptionsFlow(OptionsFlowWithConfigEntry):
 
         if user_input is not None:
             tracking_to_remove = user_input["package"]
+
+            # Forward remove to scraper API
+            scraper_url = self.config_entry.data.get(
+                CONF_SCRAPER_URL, DEFAULT_SCRAPER_URL
+            )
+            try:
+                async with aiohttp.ClientSession() as session:
+                    client = ScraperApiClient(scraper_url, session)
+                    await client.async_remove_package(tracking_to_remove)
+            except (ScraperApiError, aiohttp.ClientError):
+                pass  # Best-effort; still remove locally
+
             packages = [
                 p for p in packages if p["tracking_number"] != tracking_to_remove
             ]
@@ -147,6 +199,31 @@ class PackageTrackerOptionsFlow(OptionsFlowWithConfigEntry):
             data_schema=vol.Schema(
                 {
                     vol.Required("package"): vol.In(package_options),
+                }
+            ),
+        )
+
+    async def async_step_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure integration settings."""
+        if user_input is not None:
+            return self.async_create_entry(
+                data={
+                    **self.options,
+                    CONF_AUTO_REMOVE_DAYS: user_input[CONF_AUTO_REMOVE_DAYS],
+                }
+            )
+
+        current = self.options.get(CONF_AUTO_REMOVE_DAYS, DEFAULT_AUTO_REMOVE_DAYS)
+
+        return self.async_show_form(
+            step_id="settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_AUTO_REMOVE_DAYS, default=current
+                    ): vol.All(int, vol.Range(min=0)),
                 }
             ),
         )

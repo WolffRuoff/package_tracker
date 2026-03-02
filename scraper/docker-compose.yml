@@ -1,0 +1,15 @@
+services:
+  scraper:
+    build: .
+    container_name: package-tracker-scraper
+    ports:
+      - "8230:8230"
+    volumes:
+      - scraper-data:/data
+    environment:
+      - PORT=8230
+      - DB_PATH=/data/package_tracker.db
+    restart: unless-stopped
+
+volumes:
+  scraper-data:

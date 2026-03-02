@@ -1,17 +1,18 @@
-"""Constants for Package Tracker integration."""
+"""Constants for the package tracker scraper."""
 
 from enum import StrEnum
 
-DOMAIN = "package_tracker"
-
-CONF_PACKAGES = "packages"
-CONF_AUTO_REMOVE_DAYS = "auto_remove_days"
-CONF_SCRAPER_URL = "scraper_url"
-DEFAULT_AUTO_REMOVE_DAYS = 1
-DEFAULT_SCRAPER_URL = "http://localhost:8230"
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
 
 DEFAULT_SCAN_INTERVAL = 1800  # 30 minutes
 SCAN_INTERVAL_JITTER = 300  # +/- 5 minutes of randomness
+
+DEFAULT_PORT = 8230
+DB_PATH = "/data/package_tracker.db"
 
 
 class Carrier(StrEnum):

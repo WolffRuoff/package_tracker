@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_PACKAGES, DOMAIN, Carrier
+from .const import CONF_PACKAGES, DOMAIN
 from .coordinator import PackageTrackerCoordinator
 
 
@@ -46,6 +46,7 @@ class PackageTrackerSensor(CoordinatorEntity[PackageTrackerCoordinator], SensorE
         self._tracking_number = package_info["tracking_number"]
         self._label = package_info["label"]
         self._carrier = package_info["carrier"]
+        self._delivered_at = package_info.get("delivered_at")
 
         self._attr_unique_id = f"package_tracker_{self._tracking_number}"
         self._attr_name = self._label
@@ -61,22 +62,15 @@ class PackageTrackerSensor(CoordinatorEntity[PackageTrackerCoordinator], SensorE
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra attributes for the sensor."""
-        # Build tracking URL from carrier provider
-        tracking_url = None
-        try:
-            carrier = Carrier(self._carrier)
-            provider = self.coordinator._providers.get(carrier)
-            if provider:
-                tracking_url = provider.tracking_url(self._tracking_number)
-        except ValueError:
-            pass
-
         attrs: dict[str, Any] = {
             "label": self._label,
             "carrier": self._carrier,
             "tracking_number": self._tracking_number,
-            "tracking_url": tracking_url,
+            "tracking_url": None,
         }
+
+        if self._delivered_at:
+            attrs["delivered_at"] = self._delivered_at
 
         if not self.coordinator.data:
             return attrs
@@ -84,6 +78,9 @@ class PackageTrackerSensor(CoordinatorEntity[PackageTrackerCoordinator], SensorE
         result = self.coordinator.data.get(self._tracking_number)
         if not result:
             return attrs
+
+        # Get tracking_url from scraper API response
+        attrs["tracking_url"] = getattr(result, "tracking_url", None)
 
         attrs["raw_status"] = result.raw_status
         attrs["last_updated"] = (

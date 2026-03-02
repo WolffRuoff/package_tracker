@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from package_tracker.carriers.base import TrackingEvent, TrackingResult
 from package_tracker.const import (
     CONF_PACKAGES,
+    CONF_SCRAPER_URL,
     DOMAIN,
+    Carrier,
+    TrackingStatus,
 )
-
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture
@@ -22,6 +24,7 @@ def mock_hass():
     hass.data = {DOMAIN: {}}
     hass.config_entries = MagicMock()
     hass.config_entries.async_reload = AsyncMock()
+    hass.config_entries.async_update_entry = MagicMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
     hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
     hass.loop = MagicMock()
@@ -30,10 +33,10 @@ def mock_hass():
 
 @pytest.fixture
 def mock_config_entry():
-    """Return a mock ConfigEntry (no API keys needed)."""
+    """Return a mock ConfigEntry with scraper URL."""
     entry = MagicMock()
     entry.entry_id = "test_entry_id"
-    entry.data = {}
+    entry.data = {CONF_SCRAPER_URL: "http://localhost:8230"}
     entry.options = {
         CONF_PACKAGES: [
             {
@@ -48,88 +51,49 @@ def mock_config_entry():
     return entry
 
 
-# --- HTML fixture loaders ---
-
-
 @pytest.fixture
-def usps_delivered_html():
-    """Return rendered HTML of a USPS delivered tracking page."""
-    return (FIXTURES_DIR / "usps" / "delivered.html").read_text()
+def mock_scraper_api():
+    """Mock the ScraperApiClient for tests.
 
-
-@pytest.fixture
-def usps_in_transit_html():
-    """Return rendered HTML of a USPS in-transit tracking page."""
-    return (FIXTURES_DIR / "usps" / "in_transit.html").read_text()
-
-
-@pytest.fixture
-def usps_not_found_html():
-    """Return rendered HTML of a USPS not-found tracking page."""
-    return (FIXTURES_DIR / "usps" / "not_found.html").read_text()
-
-
-@pytest.fixture
-def ups_delivered_html():
-    """Return rendered HTML of a UPS delivered tracking page."""
-    return (FIXTURES_DIR / "ups" / "delivered.html").read_text()
-
-
-@pytest.fixture
-def ups_in_transit_html():
-    """Return rendered HTML of a UPS in-transit tracking page."""
-    return (FIXTURES_DIR / "ups" / "in_transit.html").read_text()
-
-
-@pytest.fixture
-def ups_not_found_html():
-    """Return rendered HTML of a UPS not-found tracking page."""
-    return (FIXTURES_DIR / "ups" / "not_found.html").read_text()
-
-
-@pytest.fixture
-def fedex_delivered_html():
-    """Return rendered HTML of a FedEx delivered tracking page."""
-    return (FIXTURES_DIR / "fedex" / "delivered.html").read_text()
-
-
-@pytest.fixture
-def fedex_in_transit_html():
-    """Return rendered HTML of a FedEx in-transit tracking page."""
-    return (FIXTURES_DIR / "fedex" / "in_transit.html").read_text()
-
-
-@pytest.fixture
-def fedex_not_found_html():
-    """Return rendered HTML of a FedEx not-found tracking page."""
-    return (FIXTURES_DIR / "fedex" / "not_found.html").read_text()
-
-
-@pytest.fixture
-def mock_playwright():
-    """Mock Playwright to avoid real browser launches.
-
-    Returns (mock_playwright_context, mock_page) so tests can configure
-    mock_page.content.return_value with fixture HTML.
+    Returns a mock client instance that can be configured by tests.
     """
-    mock_page = AsyncMock()
-    mock_page.goto = AsyncMock()
-    mock_page.wait_for_selector = AsyncMock()
-    mock_page.content = AsyncMock(return_value="<html></html>")
+    mock_client = AsyncMock()
 
-    mock_context = AsyncMock()
-    mock_context.new_page = AsyncMock(return_value=mock_page)
+    # Default: health check passes
+    mock_client.async_health.return_value = {"status": "ok", "version": "2.0.0"}
 
-    mock_browser = AsyncMock()
-    mock_browser.new_context = AsyncMock(return_value=mock_context)
-    mock_browser.close = AsyncMock()
+    # Default: return one package
+    mock_client.async_get_packages.return_value = [
+        {
+            "tracking_number": "92001234567890123456",
+            "carrier": "usps",
+            "label": "Test Package",
+            "created_at": "2025-01-15T00:00:00+00:00",
+            "status": "delivered",
+            "raw_status": "Delivered",
+            "estimated_delivery": "2025-01-15T00:00:00",
+            "last_updated": "2025-01-15T14:30:00",
+            "tracking_url": "https://tools.usps.com/go/TrackConfirmAction?tLabels=92001234567890123456",
+            "events": [
+                {
+                    "timestamp": "2025-01-15T14:30:00",
+                    "location": "Springfield, IL",
+                    "description": "Delivered",
+                    "status": "delivered",
+                },
+            ],
+        }
+    ]
 
-    mock_pw = AsyncMock()
-    mock_pw.chromium = MagicMock()
-    mock_pw.chromium.launch = AsyncMock(return_value=mock_browser)
+    # Default: add package succeeds
+    mock_client.async_add_package.return_value = {
+        "tracking_number": "TEST",
+        "carrier": "usps",
+        "label": "Test",
+        "created_at": "2025-01-15T00:00:00+00:00",
+    }
 
-    mock_cm = AsyncMock()
-    mock_cm.__aenter__ = AsyncMock(return_value=mock_pw)
-    mock_cm.__aexit__ = AsyncMock(return_value=False)
+    # Default: remove package succeeds
+    mock_client.async_remove_package.return_value = None
 
-    return mock_cm, mock_page
+    return mock_client
