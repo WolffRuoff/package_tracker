@@ -1,6 +1,6 @@
 # Package Tracker for Home Assistant
 
-[![codecov](https://codecov.io/gh/WolffRuoff/package_tracker/branch/main/graph/badge.svg)](https://codecov.io/gh/WolffRuoff/package_tracker)
+[![coverage](https://raw.githubusercontent.com/WolffRuoff/package_tracker/main/coverage.svg)](https://github.com/WolffRuoff/package_tracker)
 [![Docker Image Version](https://img.shields.io/docker/v/wolffruoff/package-tracker-scraper?label=scraper)](https://hub.docker.com/r/wolffruoff/package-tracker-scraper)
 
 A HACS custom integration that tracks shipping packages from USPS, UPS, and FedEx with a built-in Lovelace card.
