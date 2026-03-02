@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
@@ -32,8 +33,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register frontend static path for the Lovelace card
     frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
     if os.path.isdir(frontend_path):
-        hass.http.register_static_path(
-            f"/package_tracker", frontend_path, cache_headers=False
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig("/package_tracker", frontend_path, cache_headers=False)]
         )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
