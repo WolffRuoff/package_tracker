@@ -1,15 +1,74 @@
+name: package-tracker-scraper
 services:
-  scraper:
-    image: wolffruoff/package-tracker-scraper:latest
+  package-tracker-scraper:
+    cpu_shares: 50
+    command: []
     container_name: package-tracker-scraper
+    deploy:
+      resources:
+        limits:
+          memory: "1073741824"
+        reservations:
+          memory: "134217728"
+          devices: []
+    image: wolffruoff/package-tracker-scraper:latest
+    labels:
+      icon: https://raw.githubusercontent.com/WolffRuoff/package_tracker/main/custom_components/package_tracker/brand/icon@2x.png
     ports:
-      - "8230:8230"
+      - target: 8230
+        published: "8230"
+        protocol: tcp
+    restart: unless-stopped
     volumes:
-      - scraper-data:/data
+      - type: bind
+        source: /DATA/AppData/package-tracker-scraper/data
+        target: /data
     environment:
       - PORT=8230
       - DB_PATH=/data/package_tracker.db
-    restart: unless-stopped
+    x-casaos:
+      ports:
+        - container: "8230"
+          description:
+            en_us: Scraper REST API
+      volumes:
+        - container: /data
+          description:
+            en_us: Package tracking database
+    devices: []
+    cap_add: []
+    network_mode: bridge
+    privileged: false
 
-volumes:
-  scraper-data:
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  author: WolffRuoff
+  category: Home Automation
+  description:
+    en_us: >
+      Package Tracker Scraper is the backend service for the Package Tracker
+      Home Assistant integration. It uses Playwright to scrape real-time
+      tracking data from USPS, UPS, and FedEx, then caches the results in a
+      local SQLite database and exposes them via a REST API.
+
+
+      To use it, deploy this container on your ZimaOS device, then install the
+      Package Tracker integration in Home Assistant via HACS and point it at
+      http://YOUR_ZIMAOS_IP:8230.
+  developer: WolffRuoff
+  icon: https://raw.githubusercontent.com/WolffRuoff/package_tracker/main/custom_components/package_tracker/brand/icon@2x.png
+  index: /api/health
+  port_map: "8230"
+  scheme: http
+  store_app_id: package-tracker-scraper
+  tagline:
+    en_us: Track USPS, UPS & FedEx packages for Home Assistant
+  title:
+    en_us: Package Tracker Scraper
+  tips:
+    before_install:
+      en_us: >-
+        After installing, open the Package Tracker HACS integration in Home
+        Assistant and set the scraper URL to http://YOUR_ZIMAOS_IP:8230
