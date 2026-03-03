@@ -38,9 +38,11 @@ class PackageTrackerConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle the user step — collect scraper URL and validate connection."""
         errors: dict[str, str] = {}
+        suggested_url = DEFAULT_SCRAPER_URL
 
         if user_input is not None:
             scraper_url = user_input[CONF_SCRAPER_URL].rstrip("/")
+            suggested_url = scraper_url
 
             # Validate connection to scraper
             try:
@@ -61,9 +63,7 @@ class PackageTrackerConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_SCRAPER_URL, default=DEFAULT_SCRAPER_URL
-                    ): str,
+                    vol.Required(CONF_SCRAPER_URL, default=suggested_url): str,
                 }
             ),
             errors=errors,

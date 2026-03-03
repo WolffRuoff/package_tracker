@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 
 from package_tracker.config_flow import (
@@ -119,9 +120,6 @@ class TestConfigFlowUser:
             mock_session_cls.return_value = mock_session
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=False)
-
-            import aiohttp
-
             mock_session.get = MagicMock(
                 side_effect=aiohttp.ClientError("Connection refused")
             )
@@ -132,6 +130,30 @@ class TestConfigFlowUser:
 
         assert result["type"] == "form"
         assert result["errors"][CONF_SCRAPER_URL] == "cannot_connect"
+
+    @pytest.mark.asyncio
+    async def test_preserves_url_input_on_connection_failure(self, config_flow):
+        """URL entered by the user is preserved as the form default after a failed connection."""
+        with patch(
+            "package_tracker.config_flow.aiohttp.ClientSession"
+        ) as mock_session_cls:
+            mock_session = AsyncMock()
+            mock_session_cls.return_value = mock_session
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(
+                side_effect=aiohttp.ClientError("Connection refused")
+            )
+
+            result = await config_flow.async_step_user(
+                {CONF_SCRAPER_URL: "http://custom-host:9999"}
+            )
+
+        assert result["type"] == "form"
+        assert result["errors"][CONF_SCRAPER_URL] == "cannot_connect"
+        # The schema default should reflect what the user typed, not DEFAULT_SCRAPER_URL
+        schema_key = next(iter(result["data_schema"].schema))
+        assert schema_key.default() == "http://custom-host:9999"
 
 
 class TestOptionsFlowAddPackage:
