@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync
-      - run: uv run pytest --cov=custom_components/package_tracker --cov-report=term
+      - run: uv run pytest tests/ --cov=custom_components/package_tracker --cov-report=term
       - name: Generate coverage badge
         run: uv run coverage-badge -o coverage.svg -f
       - name: Commit coverage badge
