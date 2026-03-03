@@ -18,7 +18,7 @@ USPS_TRACKING_PAGE = (
     "https://tools.usps.com/go/TrackConfirmAction?tLabels={tracking_number}"
 )
 
-WAIT_SELECTOR = ".delivery-status-container, .tracking-progress, .error-message"
+WAIT_SELECTOR = ".track-statusbar"
 
 STATUS_MAPPING: dict[str, TrackingStatus] = {
     "delivered": TrackingStatus.DELIVERED,
@@ -79,10 +79,7 @@ class USPSProvider(CarrierProvider):
         """Parse the USPS tracking page HTML."""
         soup = BeautifulSoup(html, "html.parser")
 
-        status_banner = soup.select_one(
-            ".delivery-status-container .tb-status, "
-            ".tracking-progress .tb-status"
-        )
+        status_banner = soup.select_one(".current-tracking-status-wrapper .tb-status")
         if status_banner:
             raw_status = status_banner.get_text(strip=True)
             result.raw_status = raw_status
