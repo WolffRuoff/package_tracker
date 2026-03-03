@@ -39,7 +39,10 @@ async def lifespan(app: FastAPI):
     await store.init_db()
 
     _pw_instance = await async_playwright().start()
-    _browser = await _pw_instance.chromium.launch(headless=True)
+    _browser = await _pw_instance.chromium.launch(
+        headless=True,
+        args=["--disable-blink-features=AutomationControlled"],
+    )
     _LOGGER.info("Browser launched")
 
     scheduler = Scheduler(store, _browser)
