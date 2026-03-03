@@ -69,10 +69,23 @@ class CarrierProvider(ABC):
     ) -> str:
         """Use a shared browser instance to fetch fully rendered page HTML."""
         context = await browser.new_context(user_agent=DEFAULT_USER_AGENT)
+        await context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
         page = await context.new_page()
         try:
             await page.goto(url, wait_until="domcontentloaded")
-            await page.wait_for_selector(wait_selector, timeout=15000)
+            try:
+                await page.wait_for_selector(wait_selector, timeout=15000)
+            except Exception:
+                content = await page.content()
+                _LOGGER.error(
+                    "Timed out waiting for %r on %s — page content (first 2000 chars):\n%s",
+                    wait_selector,
+                    url,
+                    content[:2000],
+                )
+                raise
             content = await page.content()
         finally:
             await context.close()
