@@ -9,7 +9,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
-    "playwright>=1.40",
+    "camoufox[geoip]>=0.4",
     "beautifulsoup4>=4.12",
     "aiosqlite>=0.20",
 ]

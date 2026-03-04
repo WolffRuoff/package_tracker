@@ -7,9 +7,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from playwright.async_api import Browser, Page
+from playwright.async_api import Browser
 
-from ..const import DEFAULT_USER_AGENT, Carrier, TrackingStatus
+from ..const import Carrier, TrackingStatus
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,25 +67,12 @@ class CarrierProvider(ABC):
     async def _get_page_content(
         self, browser: Browser, url: str, wait_selector: str
     ) -> str:
-        """Use a shared browser instance to fetch fully rendered page HTML."""
-        context = await browser.new_context(user_agent=DEFAULT_USER_AGENT)
-        await context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        )
+        """Fetch fully rendered page HTML via a Camoufox browser context."""
+        context = await browser.new_context()
         page = await context.new_page()
         try:
             await page.goto(url, wait_until="domcontentloaded")
-            try:
-                await page.wait_for_selector(wait_selector, timeout=15000)
-            except Exception:
-                content = await page.content()
-                _LOGGER.error(
-                    "Timed out waiting for %r on %s — page content (first 2000 chars):\n%s",
-                    wait_selector,
-                    url,
-                    content[:2000],
-                )
-                raise
+            await page.wait_for_selector(wait_selector, timeout=30000)
             content = await page.content()
         finally:
             await context.close()

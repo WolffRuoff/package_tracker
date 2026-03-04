@@ -17,6 +17,7 @@ services:
     ports:
       - target: 8230
         published: "8230"
+        host_ip: "127.0.0.1"
         protocol: tcp
     restart: unless-stopped
     volumes:
