@@ -2,6 +2,7 @@ import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { cardStyles } from "./styles";
 import type { PackageTrackerCardConfig, PackageEntityAttributes } from "./types";
+import "./package-tracker-add-card";
 
 const STATUS_ICONS: Record<string, string> = {
   delivered: "mdi:package-variant-closed-check",
@@ -91,9 +92,11 @@ export class PackageTrackerCard extends LitElement {
   }
 
   private _getPackages(): PackageData[] {
-    const entities = Object.keys(this.hass.states).filter((eid) =>
-      eid.startsWith("sensor.package_tracker_")
-    );
+    const entities = Object.keys(this.hass.states).filter((eid) => {
+      if (!eid.startsWith("sensor.")) return false;
+      const attrs = this.hass.states[eid].attributes;
+      return attrs.tracking_number !== undefined && attrs.carrier !== undefined;
+    });
 
     let packages: PackageData[] = entities.map((entityId) => {
       const stateObj = this.hass.states[entityId];
