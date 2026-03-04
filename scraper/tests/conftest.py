@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -68,6 +68,9 @@ def mock_browser():
     mock_page.goto = AsyncMock()
     mock_page.wait_for_selector = AsyncMock()
     mock_page.content = AsyncMock(return_value="<html></html>")
+    mock_page.url = "https://example.com"
+    mock_page.title = AsyncMock(return_value="")
+    mock_page.on = MagicMock()  # page.on() is synchronous in Playwright
 
     mock_context = AsyncMock()
     mock_context.new_page = AsyncMock(return_value=mock_page)
