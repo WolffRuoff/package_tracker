@@ -1,7 +1,7 @@
 {
   "domain": "package_tracker",
   "name": "Package Tracker",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "documentation": "https://github.com/WolffRuoff/package_tracker",
   "issue_tracker": "https://github.com/WolffRuoff/package_tracker/issues",
   "codeowners": [],
