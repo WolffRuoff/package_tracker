@@ -37,6 +37,51 @@ class TrackingResult:
     raw_status: str = ""
 
 
+def _identify_bot_service(url: str, html: str, headers: dict[str, str]) -> str:
+    """Identify which bot-protection service is blocking the page, if any."""
+    url_l = url.lower()
+    html_l = html.lower()
+    headers_l = {k.lower(): v for k, v in headers.items()}
+
+    if (
+        "datadome" in url_l
+        or "captcha-delivery.com" in url_l
+        or any("x-dd-" in k for k in headers_l)
+        or "datadome" in html_l
+    ):
+        return "DataDome"
+
+    if (
+        "akamai" in url_l
+        or any("akamai" in k for k in headers_l)
+        or "_akamai" in html_l
+        or "akam.net" in html_l
+    ):
+        return "Akamai Bot Manager"
+
+    if "_kpsdk" in html_l or "kpsdk" in html_l or "ips.js" in html_l:
+        return "Kasada"
+
+    if (
+        "cloudflare" in url_l
+        or headers_l.get("server", "").lower() == "cloudflare"
+        or "just a moment" in html_l
+        or "__cf_bm" in html_l
+    ):
+        return "Cloudflare"
+
+    if "imperva" in url_l or "incapsula" in html_l or "_Incapsula_Resource" in html_l:
+        return "Imperva/Incapsula"
+
+    if "perimeterx" in html_l or "_pxdk" in html_l:
+        return "PerimeterX"
+
+    return "unknown"
+
+
+_BOT_HEADER_KEYWORDS = ("bot", "akamai", "datadome", "kasada", "cf-", "x-dd", "server", "via", "x-cache")
+
+
 class CarrierProvider(ABC):
     """Abstract base class for carrier providers."""
 
@@ -70,10 +115,53 @@ class CarrierProvider(ABC):
         """Fetch fully rendered page HTML via a Camoufox browser context."""
         context = await browser.new_context()
         page = await context.new_page()
+
+        _response_headers: dict[str, str] = {}
+
+        async def _on_response(response) -> None:
+            nonlocal _response_headers
+            if not _response_headers:
+                try:
+                    _response_headers = await response.all_headers()
+                except Exception:
+                    pass
+
+        page.on("response", _on_response)
+
         try:
-            await page.goto(url, wait_until="domcontentloaded")
-            await page.wait_for_selector(wait_selector, timeout=30000)
-            content = await page.content()
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_selector(wait_selector, timeout=45000)
+            return await page.content()
+        except Exception:
+            current_url = page.url
+            try:
+                title = await page.title()
+                raw_html = await page.content()
+            except Exception:
+                title = "(unavailable)"
+                raw_html = ""
+
+            bot = _identify_bot_service(current_url, raw_html, _response_headers)
+            relevant_headers = {
+                k: v
+                for k, v in _response_headers.items()
+                if any(kw in k.lower() for kw in _BOT_HEADER_KEYWORDS)
+            }
+
+            _LOGGER.error(
+                "Page load failed for %s\n"
+                "  selector=%r  redirected_to=%s\n"
+                "  page_title=%r  bot_service=%s\n"
+                "  relevant_headers=%s\n"
+                "  page_body[:2000]:\n%s",
+                url,
+                wait_selector,
+                current_url if current_url != url else "(none)",
+                title,
+                bot,
+                relevant_headers,
+                raw_html[:2000],
+            )
+            raise
         finally:
             await context.close()
-        return content

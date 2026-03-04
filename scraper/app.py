@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 
     await store.init_db()
 
-    _camoufox = AsyncCamoufox(headless=True, os="macos")
+    _camoufox = AsyncCamoufox(headless=True)
     _browser = await _camoufox.__aenter__()
     _LOGGER.info("Camoufox browser launched")
 
