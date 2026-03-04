@@ -129,7 +129,7 @@ class CarrierProvider(ABC):
         page.on("response", _on_response)
 
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.goto(url, wait_until="networkidle", timeout=30000)
             await page.wait_for_selector(wait_selector, timeout=45000)
             return await page.content()
         except Exception:
