@@ -7,8 +7,8 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from camoufox.async_api import AsyncCamoufox
 from fastapi import FastAPI, HTTPException
-from playwright.async_api import async_playwright
 
 from .carriers import get_provider
 from .const import DB_PATH, DEFAULT_PORT, Carrier
@@ -27,20 +27,20 @@ VERSION = "2.0.0"
 
 store = PackageStore(os.environ.get("DB_PATH", DB_PATH))
 scheduler: Scheduler | None = None
-_pw_instance = None
+_camoufox: AsyncCamoufox | None = None
 _browser = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start browser and scheduler on startup, clean up on shutdown."""
-    global scheduler, _pw_instance, _browser
+    global scheduler, _camoufox, _browser
 
     await store.init_db()
 
-    _pw_instance = await async_playwright().start()
-    _browser = await _pw_instance.chromium.launch(headless=True)
-    _LOGGER.info("Browser launched")
+    _camoufox = AsyncCamoufox(headless=True, os="macos")
+    _browser = await _camoufox.__aenter__()
+    _LOGGER.info("Camoufox browser launched")
 
     scheduler = Scheduler(store, _browser)
     scheduler.start()
@@ -50,10 +50,8 @@ async def lifespan(app: FastAPI):
 
     if scheduler:
         await scheduler.stop()
-    if _browser:
-        await _browser.close()
-    if _pw_instance:
-        await _pw_instance.stop()
+    if _camoufox:
+        await _camoufox.__aexit__(None, None, None)
     await store.close()
     _LOGGER.info("Shutdown complete")
 

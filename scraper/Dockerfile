@@ -1,13 +1,12 @@
 FROM python:3.12-slim
 
-# Install system deps for Playwright/Chromium
 WORKDIR /app
 
 COPY pyproject.toml .
 RUN pip install --no-cache-dir .
 
-# Install Playwright browsers and all required system dependencies
-RUN playwright install-deps chromium && playwright install chromium
+# Install Camoufox (Firefox-based, patches fingerprints at the binary level)
+RUN playwright install-deps firefox && python -m camoufox fetch
 
 COPY . scraper/
 
