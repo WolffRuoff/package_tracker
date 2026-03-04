@@ -1,0 +1,34 @@
+add_package:
+  name: Add Package
+  description: Add a new package to track via the Package Tracker scraper.
+  fields:
+    tracking_number:
+      name: Tracking Number
+      description: The carrier tracking number.
+      required: true
+      example: "92001234567890123456"
+      selector:
+        text:
+    label:
+      name: Label
+      description: A friendly display name (e.g. "Amazon Order").
+      required: true
+      example: "Amazon Order"
+      selector:
+        text:
+    carrier:
+      name: Carrier
+      description: "Shipping carrier. Leave blank to auto-detect. Valid: usps, ups, fedex."
+      required: false
+      example: "usps"
+      selector:
+        select:
+          options:
+            - label: Auto-detect
+              value: ""
+            - label: USPS
+              value: usps
+            - label: UPS
+              value: ups
+            - label: FedEx
+              value: fedex

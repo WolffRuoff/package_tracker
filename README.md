@@ -10,7 +10,8 @@ A HACS custom integration that tracks shipping packages from USPS, UPS, and FedE
 - Track packages from **USPS**, **UPS**, and **FedEx**
 - Auto-detect carrier from tracking number format
 - Built-in Lovelace card with status icons and color coding
-- Add/remove packages via the UI options flow
+- Add/remove packages via the UI options flow or the `add_package` service
+- Add Package Lovelace card — form card for adding packages directly from the dashboard
 - Modular carrier system — easy to extend with new carriers
 
 ## Installation
@@ -69,16 +70,50 @@ Follow the [Installation](#installation) steps above.
 2. Search for "Package Tracker"
 3. Enter the scraper URL (e.g. `http://localhost:8230`)
 
+### 4. Add the Dashboard Resource
+
+The Lovelace cards are served as a static file by HA. Register the resource so dashboards can load it:
+
+1. Go to **Settings** → **Dashboards** → **3-dot menu** → **Resources**
+2. Click **Add Resource**
+3. Set the URL to `/package_tracker/package-tracker-card.js`
+4. Set the resource type to **JavaScript module**
+5. Click **Create**
+
+> After a manual install the resource must be added manually. HACS installs may handle this automatically.
+
 ## Adding Packages
+
+### Via the UI options flow
 
 1. Go to the Package Tracker integration
 2. Click **Configure**
 3. Select **Add a package**
 4. Enter a label, tracking number, and optionally select the carrier (auto-detected by default)
 
-## Lovelace Card
+### Via the `add_package` service
 
-Add the card to your dashboard:
+Call `package_tracker.add_package` from Developer Tools → Services or an automation:
+
+```yaml
+service: package_tracker.add_package
+data:
+  tracking_number: "92001234567890123456"
+  label: "Amazon Order"
+  carrier: ""   # leave blank to auto-detect
+```
+
+Fields: `tracking_number` (required), `label` (required), `carrier` (optional — `usps`, `ups`, `fedex`, or blank for auto-detect).
+
+### Via the Add Package card
+
+Add `custom:package-tracker-add-card` to any dashboard for a form-based UI (see [Lovelace Cards](#lovelace-cards)).
+
+## Lovelace Cards
+
+### Package Tracker Card
+
+Displays all tracked packages sorted by status priority:
 
 ```yaml
 type: custom:package-tracker-card
@@ -86,14 +121,25 @@ title: My Packages
 show_delivered: true
 ```
 
-The card auto-discovers all `sensor.package_tracker_*` entities and displays them sorted by status priority.
-
-### Card Options
+The card auto-discovers all `sensor.package_tracker_*` entities.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `title` | string | "Package Tracker" | Card title |
 | `show_delivered` | boolean | true | Show delivered packages |
+
+### Add Package Card
+
+A form card for adding packages without leaving the dashboard. Supports the visual editor in the card picker.
+
+```yaml
+type: custom:package-tracker-add-card
+title: Add Package
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `title` | string | "Add Package" | Card title |
 
 ## Sensor Attributes
 
@@ -105,6 +151,7 @@ Each tracked package creates a sensor with these attributes:
 - `estimated_delivery` — Estimated delivery date (ISO format)
 - `last_updated` — Last successful API poll (ISO format)
 - `raw_status` — Raw status text from the carrier
+- `tracking_url` — Direct link to the carrier's tracking page
 - `events` — List of tracking events with timestamp, location, description, and status
 
 ## Development / Testing
