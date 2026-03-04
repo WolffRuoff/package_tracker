@@ -77,8 +77,8 @@ class TestParseTrackingPage:
         result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
         provider._parse_tracking_page(usps_in_transit_html, result)
         assert result.estimated_delivery is not None
-        assert result.estimated_delivery.month == 1
-        assert result.estimated_delivery.day == 16
+        assert result.estimated_delivery.month == 3
+        assert result.estimated_delivery.day == 7
 
     def test_not_found_stays_unknown(self, provider, usps_not_found_html):
         result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
@@ -124,8 +124,52 @@ class TestStatusMapping:
     def test_in_transit(self):
         assert STATUS_MAPPING["in transit"] == TrackingStatus.IN_TRANSIT
 
+    def test_moving_through_network(self):
+        assert STATUS_MAPPING["moving through network"] == TrackingStatus.IN_TRANSIT
+
     def test_pre_transit(self):
         assert STATUS_MAPPING["accepted"] == TrackingStatus.PRE_TRANSIT
 
     def test_exception(self):
         assert STATUS_MAPPING["alert"] == TrackingStatus.EXCEPTION
+
+
+class TestParseDate:
+    def test_full_date_with_year(self, provider):
+        result = provider._parse_date("January 15, 2025")
+        assert result is not None
+        assert result.month == 1
+        assert result.day == 15
+        assert result.year == 2025
+
+    def test_year_less_month_day(self, provider):
+        result = provider._parse_date("March 7")
+        assert result is not None
+        assert result.month == 3
+        assert result.day == 7
+
+    def test_day_of_week_prefix(self, provider):
+        result = provider._parse_date("Friday, March 7")
+        assert result is not None
+        assert result.month == 3
+        assert result.day == 7
+
+    def test_expected_delivery_by_prefix(self, provider):
+        result = provider._parse_date("Expected Delivery by: Friday, March 7")
+        assert result is not None
+        assert result.month == 3
+        assert result.day == 7
+
+    def test_moving_through_network_status(self, provider):
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(
+            '<div class="track-statusbar">'
+            '<div class="current-tracking-status-wrapper">'
+            '<div class="tb-status">Moving Through Network</div>'
+            "</div></div>",
+            result,
+        )
+        assert result.status == TrackingStatus.IN_TRANSIT
+
+    def test_invalid_returns_none(self, provider):
+        assert provider._parse_date("not a date at all") is None

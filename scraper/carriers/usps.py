@@ -24,6 +24,7 @@ STATUS_MAPPING: dict[str, TrackingStatus] = {
     "delivered": TrackingStatus.DELIVERED,
     "out for delivery": TrackingStatus.OUT_FOR_DELIVERY,
     "in transit": TrackingStatus.IN_TRANSIT,
+    "moving through network": TrackingStatus.IN_TRANSIT,
     "accepted": TrackingStatus.PRE_TRANSIT,
     "pre-shipment": TrackingStatus.PRE_TRANSIT,
     "shipping label created": TrackingStatus.PRE_TRANSIT,
@@ -108,18 +109,27 @@ class USPSProvider(CarrierProvider):
         return TrackingStatus.UNKNOWN
 
     def _parse_date(self, text: str) -> datetime | None:
-        """Try to parse a date from text like 'January 15, 2025'."""
-        formats = [
-            "%B %d, %Y",
-            "%b %d, %Y",
-            "%m/%d/%Y",
-        ]
-        cleaned = re.sub(r"(Expected Delivery|by|on)\s*:?\s*", "", text).strip()
-        for fmt in formats:
+        """Try to parse a date from text like 'January 15, 2025' or 'Friday, March 7'."""
+        cleaned = re.sub(r"(Expected Delivery\s*(by)?|by|on)\s*:?\s*", "", text).strip()
+        cleaned = re.sub(
+            r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*",
+            "",
+            cleaned,
+        ).strip()
+
+        for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y"):
             try:
                 return datetime.strptime(cleaned, fmt)
             except ValueError:
                 continue
+
+        for fmt in ("%B %d", "%b %d"):
+            try:
+                parsed = datetime.strptime(cleaned, fmt)
+                return parsed.replace(year=datetime.now().year)
+            except ValueError:
+                continue
+
         return None
 
     def _parse_event_row(self, row) -> TrackingEvent | None:

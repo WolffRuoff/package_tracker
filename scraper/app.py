@@ -23,7 +23,9 @@ from .storage import PackageStore
 
 _LOGGER = logging.getLogger(__name__)
 
-VERSION = "2.0.0"
+from importlib.metadata import version as _pkg_version
+
+VERSION = _pkg_version("package-tracker-scraper")
 
 store = PackageStore(os.environ.get("DB_PATH", DB_PATH))
 scheduler: Scheduler | None = None
