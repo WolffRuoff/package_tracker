@@ -94,7 +94,7 @@ jobs:
           echo "NEW_VERSION=$NEW_VERSION" >> "$GITHUB_ENV"
           echo "New version: $NEW_VERSION (was $CURRENT)"
 
-      - name: Update manifest.json
+      - name: Update version files
         if: env.SKIP_RELEASE != 'true'
         run: |
           python3 -c "
@@ -104,7 +104,8 @@ jobs:
           data['version'] = '${{ env.NEW_VERSION }}'
           p.write_text(json.dumps(data, indent=2) + '\n')
           "
-          echo "Updated manifest.json to version $NEW_VERSION"
+          sed -i 's/^version = ".*"/version = "${{ env.NEW_VERSION }}"/' scraper/pyproject.toml
+          echo "Updated manifest.json and scraper/pyproject.toml to $NEW_VERSION"
 
       - name: Commit, tag, and push
         if: env.SKIP_RELEASE != 'true'
@@ -114,7 +115,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://oauth2:${REPO_PAT}@github.com/${{ github.repository }}
-          git add custom_components/package_tracker/manifest.json
+          git add custom_components/package_tracker/manifest.json scraper/pyproject.toml
           git commit -m "chore: bump version to ${NEW_VERSION}"
           git tag "v${NEW_VERSION}"
           git push origin HEAD --tags
