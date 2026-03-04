@@ -94,6 +94,12 @@ FastAPI app on port 8230 (configurable via `PORT` env var). SQLite DB at `/data/
 - **`validate.yml`** — runs on PRs and pushes to `main`. Two jobs: HACS validation (`hacs/action@main`) and tests (`pytest` with Codecov upload).
 - **`release.yml`** — runs on pushes to `main`. Auto-determines version bump from conventional commits (`feat:` → minor, `BREAKING CHANGE` → major, else patch). Updates `manifest.json` version, creates a git tag + GitHub Release, then builds and pushes the scraper Docker image to `wolffruoff/package-tracker-scraper` on Docker Hub (tagged `latest` + version).
 
+## Carrier Scraping Strategy
+
+The scraper uses Camoufox (anti-detection Playwright) to scrape carrier tracking pages. **Never suggest switching to official carrier APIs** (USPS Web Tools, UPS Developer, FedEx Web Services, etc.) — they require significant onboarding (business registration, approval processes, credentials management) and are extremely flaky in practice. Web scraping with Camoufox is the intentional long-term approach.
+
+When carriers add bot protection, the correct response is to improve Camoufox configuration or page interaction behavior, not to abandon scraping.
+
 ## Key Conventions
 
 - `TrackingResult` and `TrackingEvent` are dataclasses — defined in both `carriers/base.py` (HA side) and `scraper/carriers/base.py` (scraper side)
