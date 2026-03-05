@@ -105,14 +105,12 @@ class TestAsyncTrack:
         assert result.last_updated is not None
 
     @pytest.mark.asyncio
-    async def test_browser_error_returns_unknown(self, provider, mock_browser):
+    async def test_browser_error_raises(self, provider, mock_browser):
         browser, mock_page = mock_browser
         mock_page.goto.side_effect = Exception("Browser error")
 
-        result = await provider.async_track("92001234567890123456", browser)
-
-        assert result.status == TrackingStatus.UNKNOWN
-        assert result.events == []
+        with pytest.raises(Exception, match="Browser error"):
+            await provider.async_track("92001234567890123456", browser)
 
 
 class TestStatusMapping:

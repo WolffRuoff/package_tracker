@@ -85,12 +85,24 @@ class Scheduler:
             _LOGGER.warning("No provider for carrier %s", carrier)
             return
 
+        t0 = datetime.now()
         try:
             result = await provider.async_track(tracking_number, self._browser)
+            elapsed = (datetime.now() - t0).total_seconds()
+            _LOGGER.info(
+                "Scraped %s %s in %.1fs: status=%s estimated_delivery=%s events=%d",
+                carrier.value,
+                tracking_number,
+                elapsed,
+                result.status.value,
+                result.estimated_delivery,
+                len(result.events),
+            )
             await self._save_result(result)
         except Exception:
+            elapsed = (datetime.now() - t0).total_seconds()
             _LOGGER.exception(
-                "Error scraping %s for %s", carrier, tracking_number
+                "Error scraping %s for %s after %.1fs", carrier, tracking_number, elapsed
             )
 
     async def _save_result(self, result: TrackingResult) -> None:

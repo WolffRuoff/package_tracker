@@ -66,14 +66,10 @@ class USPSProvider(CarrierProvider):
             tracking_number=tracking_number,
         )
 
-        try:
-            url = self.tracking_url(tracking_number)
-            html = await self._get_page_content(browser, url, WAIT_SELECTOR)
-            self._parse_tracking_page(html, result)
-            result.last_updated = datetime.now()
-        except Exception:
-            _LOGGER.exception("Error tracking USPS package %s", tracking_number)
-
+        url = self.tracking_url(tracking_number)
+        html = await self._get_page_content(browser, url, WAIT_SELECTOR)
+        self._parse_tracking_page(html, result)
+        result.last_updated = datetime.now()
         return result
 
     def _parse_tracking_page(self, html: str, result: TrackingResult) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -42,6 +43,7 @@ class TestRefreshPackage:
             tracking_number="TRACK1",
             status=TrackingStatus.DELIVERED,
             raw_status="Delivered",
+            last_updated=datetime.now(),
         )
 
         with patch.object(
