@@ -21,6 +21,7 @@ class Carrier(StrEnum):
     USPS = "usps"
     UPS = "ups"
     FEDEX = "fedex"
+    SPEEDX = "speedx"
 
 
 class TrackingStatus(StrEnum):

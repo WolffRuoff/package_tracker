@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Home Assistant custom integration (HACS) for tracking shipping packages from USPS, UPS, and FedEx. Split into two components:
+Home Assistant custom integration (HACS) for tracking shipping packages from USPS, UPS, FedEx, and SpeedX. Split into two components:
 
 1. **Scraper container** (`scraper/`) — standalone Docker app running Playwright + Chromium, scrapes carrier pages, exposes results via REST API
 2. **HACS integration** (`custom_components/package_tracker/`) — lightweight HA integration (no browser deps) that polls the scraper API and exposes sensor entities + Lovelace card
@@ -99,6 +99,8 @@ FastAPI app on port 8230 (configurable via `PORT` env var). SQLite DB at `/data/
 The scraper uses Camoufox (anti-detection Playwright) to scrape carrier tracking pages. **Never suggest switching to official carrier APIs** (USPS Web Tools, UPS Developer, FedEx Web Services, etc.) — they require significant onboarding (business registration, approval processes, credentials management) and are extremely flaky in practice. Web scraping with Camoufox is the intentional long-term approach.
 
 When carriers add bot protection, the correct response is to improve Camoufox configuration or page interaction behavior, not to abandon scraping.
+
+**SpeedX parsing strategy:** SpeedX's tracking page is a Next.js SSR/RSC app. Tailwind CSS class names carry no semantic meaning, so the scraper extracts structured JSON from `self.__next_f.push` script tags instead of CSS selectors. Wait selector: `img[alt='warehouse']`. The JSON is JS-string-escaped (`\"` → `"`), so guard checks use bare word matching (`'trackingNumber' in text`) rather than quoted form, then `str.replace('\\"', '"')` before `json.JSONDecoder().raw_decode()` anchored at the `"events":` array.
 
 ## Key Conventions
 

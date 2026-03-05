@@ -62,6 +62,16 @@ def fedex_not_found_html():
 
 
 @pytest.fixture
+def speedx_delivered_html():
+    return (FIXTURES_DIR / "speedx" / "delivered.html").read_text()
+
+
+@pytest.fixture
+def speedx_order_placed_html():
+    return (FIXTURES_DIR / "speedx" / "order_placed.html").read_text()
+
+
+@pytest.fixture
 def mock_browser():
     """Mock Playwright browser for carrier tests."""
     mock_page = AsyncMock()

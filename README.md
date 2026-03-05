@@ -3,11 +3,11 @@
 [![coverage](https://raw.githubusercontent.com/WolffRuoff/package_tracker/main/coverage.svg)](https://github.com/WolffRuoff/package_tracker)
 [![Docker Image Version](https://img.shields.io/docker/v/wolffruoff/package-tracker-scraper?label=scraper)](https://hub.docker.com/r/wolffruoff/package-tracker-scraper)
 
-A HACS custom integration that tracks shipping packages from USPS, UPS, and FedEx with a built-in Lovelace card.
+A HACS custom integration that tracks shipping packages from USPS, UPS, FedEx, and SpeedX with a built-in Lovelace card.
 
 ## Features
 
-- Track packages from **USPS**, **UPS**, and **FedEx**
+- Track packages from **USPS**, **UPS**, **FedEx**, and **SpeedX**
 - Auto-detect carrier from tracking number format
 - Built-in Lovelace card with status icons and color coding
 - Add/remove packages via the UI options flow or the `add_package` service
@@ -103,7 +103,7 @@ data:
   carrier: ""   # leave blank to auto-detect
 ```
 
-Fields: `tracking_number` (required), `label` (required), `carrier` (optional — `usps`, `ups`, `fedex`, or blank for auto-detect).
+Fields: `tracking_number` (required), `label` (required), `carrier` (optional — `usps`, `ups`, `fedex`, `speedx`, or blank for auto-detect).
 
 ### Via the Add Package card
 
@@ -146,7 +146,7 @@ title: Add Package
 Each tracked package creates a sensor with these attributes:
 
 - `label` — Package label
-- `carrier` — Carrier name (usps/ups/fedex)
+- `carrier` — Carrier name (usps/ups/fedex/speedx)
 - `tracking_number` — Tracking number
 - `estimated_delivery` — Estimated delivery date (ISO format)
 - `last_updated` — Last successful API poll (ISO format)

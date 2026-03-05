@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..const import Carrier
 from .base import CarrierProvider
 from .fedex import FedExProvider
+from .speedx import SpeedXProvider
 from .ups import UPSProvider
 from .usps import USPSProvider
 
@@ -12,6 +13,7 @@ CARRIER_PROVIDERS: dict[Carrier, type[CarrierProvider]] = {
     Carrier.USPS: USPSProvider,
     Carrier.UPS: UPSProvider,
     Carrier.FEDEX: FedExProvider,
+    Carrier.SPEEDX: SpeedXProvider,
 }
 
 
