@@ -128,6 +128,8 @@ class CarrierProvider(ABC):
 
         page.on("response", _on_response)
 
+        tracking_number_hint = url.split("=")[-1].split("/")[-1][:30]
+
         try:
             await page.goto(url, wait_until="networkidle", timeout=30000)
             await page.wait_for_selector(wait_selector, timeout=45000)
@@ -148,11 +150,19 @@ class CarrierProvider(ABC):
                 if any(kw in k.lower() for kw in _BOT_HEADER_KEYWORDS)
             }
 
+            dump_path = f"/tmp/page_fail_{tracking_number_hint}.html"
+            try:
+                with open(dump_path, "w") as f:
+                    f.write(raw_html)
+            except Exception:
+                dump_path = "(write failed)"
+
             _LOGGER.error(
                 "Page load failed for %s\n"
                 "  selector=%r  redirected_to=%s\n"
                 "  page_title=%r  bot_service=%s\n"
                 "  relevant_headers=%s\n"
+                "  full HTML dumped to %s\n"
                 "  page_body[:2000]:\n%s",
                 url,
                 wait_selector,
@@ -160,6 +170,7 @@ class CarrierProvider(ABC):
                 title,
                 bot,
                 relevant_headers,
+                dump_path,
                 raw_html[:2000],
             )
             raise

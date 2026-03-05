@@ -66,14 +66,10 @@ class USPSProvider(CarrierProvider):
             tracking_number=tracking_number,
         )
 
-        try:
-            url = self.tracking_url(tracking_number)
-            html = await self._get_page_content(browser, url, WAIT_SELECTOR)
-            self._parse_tracking_page(html, result)
-            result.last_updated = datetime.now()
-        except Exception:
-            _LOGGER.exception("Error tracking USPS package %s", tracking_number)
-
+        url = self.tracking_url(tracking_number)
+        html = await self._get_page_content(browser, url, WAIT_SELECTOR)
+        self._parse_tracking_page(html, result)
+        result.last_updated = datetime.now()
         return result
 
     def _parse_tracking_page(self, html: str, result: TrackingResult) -> None:
@@ -86,9 +82,11 @@ class USPSProvider(CarrierProvider):
             result.raw_status = raw_status
             result.status = self._map_status(raw_status)
 
-        eta_el = soup.select_one(".expected-delivery-date")
-        if eta_el:
-            eta_text = eta_el.get_text(strip=True)
+        eta_snip = soup.select_one(".expected_delivery .eta_snip")
+        if eta_snip:
+            for hint in eta_snip.select(".hint"):
+                hint.decompose()
+            eta_text = eta_snip.get_text(" ", strip=True)
             result.estimated_delivery = self._parse_date(eta_text)
 
         history_rows = soup.select(
@@ -112,12 +110,12 @@ class USPSProvider(CarrierProvider):
         """Try to parse a date from text like 'January 15, 2025' or 'Friday, March 7'."""
         cleaned = re.sub(r"(Expected Delivery\s*(by)?|by|on)\s*:?\s*", "", text).strip()
         cleaned = re.sub(
-            r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*",
+            r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*",
             "",
             cleaned,
         ).strip()
 
-        for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y"):
+        for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y", "%d %B %Y", "%d %b %Y"):
             try:
                 return datetime.strptime(cleaned, fmt)
             except ValueError:

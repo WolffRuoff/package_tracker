@@ -79,6 +79,7 @@ class TestParseTrackingPage:
         assert result.estimated_delivery is not None
         assert result.estimated_delivery.month == 3
         assert result.estimated_delivery.day == 7
+        assert result.estimated_delivery.year == 2026
 
     def test_not_found_stays_unknown(self, provider, usps_not_found_html):
         result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
@@ -104,14 +105,12 @@ class TestAsyncTrack:
         assert result.last_updated is not None
 
     @pytest.mark.asyncio
-    async def test_browser_error_returns_unknown(self, provider, mock_browser):
+    async def test_browser_error_raises(self, provider, mock_browser):
         browser, mock_page = mock_browser
         mock_page.goto.side_effect = Exception("Browser error")
 
-        result = await provider.async_track("92001234567890123456", browser)
-
-        assert result.status == TrackingStatus.UNKNOWN
-        assert result.events == []
+        with pytest.raises(Exception, match="Browser error"):
+            await provider.async_track("92001234567890123456", browser)
 
 
 class TestStatusMapping:
@@ -153,6 +152,13 @@ class TestParseDate:
         assert result is not None
         assert result.month == 3
         assert result.day == 7
+
+    def test_day_of_week_no_comma_with_year(self, provider):
+        result = provider._parse_date("Saturday 7 March 2026")
+        assert result is not None
+        assert result.month == 3
+        assert result.day == 7
+        assert result.year == 2026
 
     def test_expected_delivery_by_prefix(self, provider):
         result = provider._parse_date("Expected Delivery by: Friday, March 7")
