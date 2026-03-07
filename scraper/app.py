@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
     _browser = await _camoufox.__aenter__()
     _LOGGER.info("Camoufox browser launched")
 
-    scheduler = Scheduler(store, _browser)
+    scheduler = Scheduler(store, _camoufox, _browser)
     scheduler.start()
     _LOGGER.info("Scheduler started")
 

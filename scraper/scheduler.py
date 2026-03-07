@@ -8,6 +8,7 @@ import logging
 import random
 from datetime import datetime
 
+from camoufox.async_api import AsyncCamoufox
 from playwright.async_api import Browser
 
 from .carriers import get_provider
@@ -21,8 +22,9 @@ _LOGGER = logging.getLogger(__name__)
 class Scheduler:
     """Background task that polls all tracked packages on an interval."""
 
-    def __init__(self, store: PackageStore, browser: Browser) -> None:
+    def __init__(self, store: PackageStore, camoufox: AsyncCamoufox, browser: Browser) -> None:
         self._store = store
+        self._camoufox = camoufox
         self._browser = browser
         self._task: asyncio.Task | None = None
         self._providers = {carrier: get_provider(carrier) for carrier in Carrier}
@@ -42,6 +44,16 @@ class Scheduler:
             except asyncio.CancelledError:
                 pass
             _LOGGER.info("Scheduler stopped")
+
+    async def _restart_browser(self) -> None:
+        """Restart the Camoufox browser after a crash."""
+        _LOGGER.warning("Browser is closed; restarting Camoufox")
+        try:
+            await self._camoufox.__aexit__(None, None, None)
+        except Exception:
+            pass
+        self._browser = await self._camoufox.__aenter__()
+        _LOGGER.info("Camoufox browser restarted successfully")
 
     async def refresh_package(self, tracking_number: str) -> None:
         """Force an immediate re-scrape of a single package."""
@@ -84,6 +96,15 @@ class Scheduler:
         if provider is None:
             _LOGGER.warning("No provider for carrier %s", carrier)
             return
+
+        if not self._browser.is_connected():
+            try:
+                await self._restart_browser()
+            except Exception:
+                _LOGGER.exception(
+                    "Failed to restart browser; skipping %s %s", carrier, tracking_number
+                )
+                return
 
         t0 = datetime.now()
         try:

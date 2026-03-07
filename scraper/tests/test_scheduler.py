@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 import pytest_asyncio
@@ -24,13 +24,25 @@ async def store():
 
 
 @pytest.fixture
-def mock_browser():
-    return AsyncMock()
+def mock_camoufox():
+    camoufox = AsyncMock()
+    camoufox.__aenter__ = AsyncMock()
+    camoufox.__aexit__ = AsyncMock()
+    return camoufox
 
 
 @pytest.fixture
-def scheduler(store, mock_browser):
-    return Scheduler(store, mock_browser)
+def mock_browser():
+    browser = AsyncMock()
+    # is_connected() is synchronous in Playwright — use MagicMock so the
+    # return value is a plain bool, not a coroutine.
+    browser.is_connected = MagicMock(return_value=True)
+    return browser
+
+
+@pytest.fixture
+def scheduler(store, mock_camoufox, mock_browser):
+    return Scheduler(store, mock_camoufox, mock_browser)
 
 
 class TestRefreshPackage:
@@ -61,6 +73,89 @@ class TestRefreshPackage:
     async def test_refresh_nonexistent_package(self, scheduler):
         """Should log warning but not error."""
         await scheduler.refresh_package("NONEXISTENT")
+
+
+class TestBrowserRestart:
+    @pytest.mark.asyncio
+    async def test_restart_browser_exits_and_relaunches(
+        self, scheduler, mock_camoufox
+    ):
+        new_browser = AsyncMock()
+        new_browser.is_connected.return_value = True
+        mock_camoufox.__aenter__.return_value = new_browser
+
+        await scheduler._restart_browser()
+
+        mock_camoufox.__aexit__.assert_awaited_once_with(None, None, None)
+        mock_camoufox.__aenter__.assert_awaited_once()
+        assert scheduler._browser is new_browser
+
+    @pytest.mark.asyncio
+    async def test_disconnected_browser_restarts_before_scrape(
+        self, scheduler, store, mock_camoufox, mock_browser
+    ):
+        mock_browser.is_connected.return_value = False
+        new_browser = AsyncMock()
+        new_browser.is_connected = MagicMock(return_value=True)
+        mock_camoufox.__aenter__.return_value = new_browser
+
+        await store.add_package("TRACK1", "usps", "Pkg")
+        mock_result = TrackingResult(
+            carrier=Carrier.USPS,
+            tracking_number="TRACK1",
+            status=TrackingStatus.IN_TRANSIT,
+            raw_status="In Transit",
+            last_updated=datetime.now(),
+        )
+
+        with patch.object(
+            scheduler._providers[Carrier.USPS],
+            "async_track",
+            new=AsyncMock(return_value=mock_result),
+        ) as mock_track:
+            await scheduler.refresh_package("TRACK1")
+
+        mock_camoufox.__aenter__.assert_awaited_once()
+        mock_track.assert_awaited_once_with("TRACK1", new_browser)
+
+    @pytest.mark.asyncio
+    async def test_restart_failure_skips_scrape(
+        self, scheduler, store, mock_camoufox, mock_browser
+    ):
+        mock_browser.is_connected = MagicMock(return_value=False)
+        mock_camoufox.__aexit__.side_effect = Exception("dead")
+        mock_camoufox.__aenter__.side_effect = Exception("cannot start")
+
+        await store.add_package("TRACK1", "usps", "Pkg")
+
+        with patch.object(
+            scheduler._providers[Carrier.USPS], "async_track"
+        ) as mock_track:
+            await scheduler.refresh_package("TRACK1")
+
+        mock_track.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_connected_browser_does_not_restart(
+        self, scheduler, store, mock_camoufox, mock_browser
+    ):
+        mock_browser.is_connected.return_value = True
+
+        await store.add_package("TRACK1", "usps", "Pkg")
+        mock_result = TrackingResult(
+            carrier=Carrier.USPS,
+            tracking_number="TRACK1",
+            status=TrackingStatus.IN_TRANSIT,
+            raw_status="In Transit",
+            last_updated=datetime.now(),
+        )
+
+        with patch.object(
+            scheduler._providers[Carrier.USPS], "async_track", return_value=mock_result
+        ):
+            await scheduler.refresh_package("TRACK1")
+
+        mock_camoufox.__aenter__.assert_not_awaited()
 
 
 class TestStartStop:
