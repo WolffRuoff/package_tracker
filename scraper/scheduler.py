@@ -82,9 +82,14 @@ class Scheduler:
     async def _poll_all(self) -> None:
         """Poll all tracked packages."""
         packages = await self._store.get_all_packages()
-        _LOGGER.info("Polling %d packages", len(packages))
-
-        for pkg in packages:
+        pending = [p for p in packages if p.get("status") != "delivered"]
+        _LOGGER.info(
+            "Polling %d/%d packages (skipping %d delivered)",
+            len(pending),
+            len(packages),
+            len(packages) - len(pending),
+        )
+        for pkg in pending:
             await self._scrape_package(pkg)
 
     async def _scrape_package(self, pkg: dict) -> None:

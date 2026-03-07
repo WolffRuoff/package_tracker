@@ -158,6 +158,95 @@ class TestBrowserRestart:
         mock_camoufox.__aenter__.assert_not_awaited()
 
 
+class TestPollAll:
+    @pytest.mark.asyncio
+    async def test_skips_delivered_packages(self, scheduler, store):
+        """Delivered packages should not be scraped during scheduled polling."""
+        await store.add_package("DELIVERED1", "usps", "Done")
+        await store.add_package("TRANSIT1", "usps", "Active")
+
+        mock_result = TrackingResult(
+            carrier=Carrier.USPS,
+            tracking_number="DELIVERED1",
+            status=TrackingStatus.DELIVERED,
+            raw_status="Delivered",
+            last_updated=datetime.now(),
+        )
+        await store.save_tracking_result(
+            tracking_number="DELIVERED1",
+            status="delivered",
+            raw_status="Delivered",
+            estimated_delivery=None,
+            last_updated=datetime.now().isoformat(),
+            events_json="[]",
+        )
+
+        transit_result = TrackingResult(
+            carrier=Carrier.USPS,
+            tracking_number="TRANSIT1",
+            status=TrackingStatus.IN_TRANSIT,
+            raw_status="In Transit",
+            last_updated=datetime.now(),
+        )
+
+        with patch.object(
+            scheduler._providers[Carrier.USPS],
+            "async_track",
+            new=AsyncMock(return_value=transit_result),
+        ) as mock_track:
+            await scheduler._poll_all()
+
+        mock_track.assert_awaited_once_with("TRANSIT1", scheduler._browser)
+
+    @pytest.mark.asyncio
+    async def test_skips_all_when_all_delivered(self, scheduler, store):
+        """When all packages are delivered, async_track should never be called."""
+        await store.add_package("DELIVERED1", "usps", "Done1")
+        await store.add_package("DELIVERED2", "ups", "Done2")
+        for tn in ("DELIVERED1", "DELIVERED2"):
+            await store.save_tracking_result(
+                tracking_number=tn,
+                status="delivered",
+                raw_status="Delivered",
+                estimated_delivery=None,
+                last_updated=datetime.now().isoformat(),
+                events_json="[]",
+            )
+
+        with patch.object(
+            scheduler._providers[Carrier.USPS], "async_track"
+        ) as mock_usps, patch.object(
+            scheduler._providers[Carrier.UPS], "async_track"
+        ) as mock_ups:
+            await scheduler._poll_all()
+
+        mock_usps.assert_not_awaited()
+        mock_ups.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_polls_all_when_none_delivered(self, scheduler, store):
+        """All in-transit packages should be scraped."""
+        await store.add_package("TRACK1", "usps", "Pkg1")
+        await store.add_package("TRACK2", "usps", "Pkg2")
+
+        mock_result = TrackingResult(
+            carrier=Carrier.USPS,
+            tracking_number="TRACK1",
+            status=TrackingStatus.IN_TRANSIT,
+            raw_status="In Transit",
+            last_updated=datetime.now(),
+        )
+
+        with patch.object(
+            scheduler._providers[Carrier.USPS],
+            "async_track",
+            new=AsyncMock(return_value=mock_result),
+        ) as mock_track:
+            await scheduler._poll_all()
+
+        assert mock_track.await_count == 2
+
+
 class TestStartStop:
     @pytest.mark.asyncio
     async def test_start_creates_task(self, scheduler):

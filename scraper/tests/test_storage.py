@@ -87,6 +87,35 @@ class TestGetAllPackages:
         assert packages[0]["status"] == TrackingStatus.UNKNOWN
 
 
+class TestGetPackage:
+    @pytest.mark.asyncio
+    async def test_get_package_returns_none_for_unknown(self, in_memory_store):
+        result = await in_memory_store.get_package("NONEXISTENT")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_package_returns_package_without_tracking_result(self, in_memory_store):
+        await in_memory_store.add_package("TRACK1", "usps", "My Pkg")
+        pkg = await in_memory_store.get_package("TRACK1")
+        assert pkg is not None
+        assert pkg["tracking_number"] == "TRACK1"
+        assert pkg["carrier"] == "usps"
+        assert pkg["label"] == "My Pkg"
+        assert pkg["status"] == TrackingStatus.UNKNOWN
+
+    @pytest.mark.asyncio
+    async def test_get_package_returns_package_with_tracking_result(self, in_memory_store):
+        await in_memory_store.add_package("TRACK1", "usps", "My Pkg")
+        await in_memory_store.save_tracking_result(
+            "TRACK1", "delivered", "Delivered", None, "2025-01-15T14:30:00", "[]"
+        )
+        pkg = await in_memory_store.get_package("TRACK1")
+        assert pkg is not None
+        assert pkg["status"] == "delivered"
+        assert pkg["raw_status"] == "Delivered"
+        assert pkg["last_updated"] == "2025-01-15T14:30:00"
+
+
 class TestSaveTrackingResult:
     @pytest.mark.asyncio
     async def test_save_and_retrieve(self, in_memory_store):

@@ -187,6 +187,69 @@ async def test_handler_raises_on_scraper_error(mock_hass, mock_entry, mock_coord
 
 
 @pytest.mark.asyncio
+async def test_handler_calls_refresh_after_add(mock_hass, mock_entry, mock_coordinator):
+    mock_client = AsyncMock()
+    mock_coordinator._ensure_client = MagicMock(return_value=mock_client)
+    mock_coordinator.entry = mock_entry
+    mock_coordinator.data = {}
+    mock_entry.options = {CONF_PACKAGES: []}
+    handler = await _setup_entry(mock_hass, mock_entry, mock_coordinator)
+
+    call = MagicMock()
+    call.data = {"tracking_number": "1Z12345E6605272234", "label": "Test", "carrier": "ups"}
+    await handler(call)
+
+    mock_client.async_refresh_package.assert_called_once_with("1Z12345E6605272234")
+
+
+@pytest.mark.asyncio
+async def test_handler_updates_coordinator_data_on_refresh(mock_hass, mock_entry, mock_coordinator):
+    mock_client = AsyncMock()
+    mock_client.async_refresh_package.return_value = {
+        "tracking_number": "1Z12345E6605272234",
+        "carrier": "ups",
+        "status": "in_transit",
+        "raw_status": "In Transit",
+        "estimated_delivery": None,
+        "last_updated": None,
+        "events": [],
+        "tracking_url": "https://www.ups.com/track?tracknum=1Z12345E6605272234",
+    }
+    mock_coordinator._ensure_client = MagicMock(return_value=mock_client)
+    mock_coordinator.entry = mock_entry
+    mock_coordinator.data = {}
+    mock_coordinator.async_set_updated_data = MagicMock()
+    mock_entry.options = {CONF_PACKAGES: []}
+    handler = await _setup_entry(mock_hass, mock_entry, mock_coordinator)
+
+    call = MagicMock()
+    call.data = {"tracking_number": "1Z12345E6605272234", "label": "Test", "carrier": "ups"}
+    await handler(call)
+
+    mock_coordinator.async_set_updated_data.assert_called_once()
+    updated_data = mock_coordinator.async_set_updated_data.call_args[0][0]
+    assert "1Z12345E6605272234" in updated_data
+
+
+@pytest.mark.asyncio
+async def test_handler_continues_if_refresh_fails(mock_hass, mock_entry, mock_coordinator):
+    mock_client = AsyncMock()
+    mock_client.async_refresh_package.side_effect = ScraperApiError("timeout")
+    mock_coordinator._ensure_client = MagicMock(return_value=mock_client)
+    mock_coordinator.entry = mock_entry
+    mock_coordinator.data = {}
+    mock_entry.options = {CONF_PACKAGES: []}
+    handler = await _setup_entry(mock_hass, mock_entry, mock_coordinator)
+
+    call = MagicMock()
+    call.data = {"tracking_number": "1Z12345E6605272234", "label": "Test", "carrier": "ups"}
+    # Should not raise — refresh failure is swallowed
+    await handler(call)
+
+    mock_hass.config_entries.async_update_entry.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_handler_updates_options_on_success(mock_hass, mock_entry, mock_coordinator):
     mock_coordinator._ensure_client = MagicMock(return_value=AsyncMock())
     mock_coordinator.entry = mock_entry

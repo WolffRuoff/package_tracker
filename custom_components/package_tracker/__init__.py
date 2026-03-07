@@ -13,10 +13,14 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
+import logging
+
 from .api_client import ScraperApiError
 from .carriers import detect_carrier
 from .const import CONF_PACKAGES, CONF_SCRAPER_URL, DEFAULT_SCRAPER_URL, DOMAIN
-from .coordinator import PackageTrackerCoordinator
+from .coordinator import PackageTrackerCoordinator, parse_package_dict
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor"]
 
@@ -87,6 +91,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await client.async_add_package(tracking_number, carrier, label)
             except ScraperApiError as err:
                 raise HomeAssistantError(f"Scraper error: {err}") from err
+
+            try:
+                pkg_data = await client.async_refresh_package(tracking_number)
+                result = parse_package_dict(pkg_data)
+                if result:
+                    new_data = {**(coord.data or {}), tracking_number: result}
+                    coord.async_set_updated_data(new_data)
+            except ScraperApiError:
+                _LOGGER.warning(
+                    "Could not trigger immediate refresh for %s; will scrape on next cycle",
+                    tracking_number,
+                )
 
             packages.append(
                 {"label": label, "tracking_number": tracking_number, "carrier": carrier}
