@@ -29,6 +29,42 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def parse_package_dict(pkg: dict) -> TrackingResult | None:
+    """Parse a scraper package dict into a TrackingResult. Returns None on error."""
+    try:
+        events = []
+        for e in pkg.get("events", []):
+            try:
+                events.append(
+                    TrackingEvent(
+                        timestamp=datetime.fromisoformat(e["timestamp"]),
+                        location=e["location"],
+                        description=e["description"],
+                        status=TrackingStatus(e["status"]),
+                    )
+                )
+            except (ValueError, KeyError):
+                continue
+        return TrackingResult(
+            carrier=Carrier(pkg["carrier"]),
+            tracking_number=pkg["tracking_number"],
+            status=TrackingStatus(pkg.get("status", "unknown")),
+            raw_status=pkg.get("raw_status", ""),
+            estimated_delivery=(
+                datetime.fromisoformat(pkg["estimated_delivery"])
+                if pkg.get("estimated_delivery") else None
+            ),
+            last_updated=(
+                datetime.fromisoformat(pkg["last_updated"])
+                if pkg.get("last_updated") else None
+            ),
+            events=events,
+            tracking_url=pkg.get("tracking_url"),
+        )
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 class PackageTrackerCoordinator(DataUpdateCoordinator[dict[str, TrackingResult]]):
     """Coordinator that polls the scraper API for package updates."""
 
@@ -83,42 +119,10 @@ class PackageTrackerCoordinator(DataUpdateCoordinator[dict[str, TrackingResult]]
 
         for pkg in packages_data:
             tracking_number = pkg["tracking_number"]
-
-            events = []
-            for e in pkg.get("events", []):
-                try:
-                    events.append(
-                        TrackingEvent(
-                            timestamp=datetime.fromisoformat(e["timestamp"]),
-                            location=e["location"],
-                            description=e["description"],
-                            status=TrackingStatus(e["status"]),
-                        )
-                    )
-                except (ValueError, KeyError):
-                    continue
-
-            try:
-                result = TrackingResult(
-                    carrier=Carrier(pkg["carrier"]),
-                    tracking_number=tracking_number,
-                    status=TrackingStatus(pkg.get("status", "unknown")),
-                    raw_status=pkg.get("raw_status", ""),
-                    estimated_delivery=(
-                        datetime.fromisoformat(pkg["estimated_delivery"])
-                        if pkg.get("estimated_delivery")
-                        else None
-                    ),
-                    last_updated=(
-                        datetime.fromisoformat(pkg["last_updated"])
-                        if pkg.get("last_updated")
-                        else None
-                    ),
-                    events=events,
-                    tracking_url=pkg.get("tracking_url"),
-                )
+            result = parse_package_dict(pkg)
+            if result:
                 results[tracking_number] = result
-            except (ValueError, KeyError):
+            else:
                 _LOGGER.exception(
                     "Error parsing tracking result for %s", tracking_number
                 )
