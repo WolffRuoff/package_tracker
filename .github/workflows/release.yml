@@ -94,6 +94,10 @@ jobs:
           echo "NEW_VERSION=$NEW_VERSION" >> "$GITHUB_ENV"
           echo "New version: $NEW_VERSION (was $CURRENT)"
 
+      - name: Set up uv
+        if: env.SKIP_RELEASE != 'true'
+        uses: astral-sh/setup-uv@v5
+
       - name: Update version files
         if: env.SKIP_RELEASE != 'true'
         run: |
@@ -105,7 +109,8 @@ jobs:
           p.write_text(json.dumps(data, indent=2) + '\n')
           "
           sed -i 's/^version = ".*"/version = "${{ env.NEW_VERSION }}"/' scraper/pyproject.toml
-          echo "Updated manifest.json and scraper/pyproject.toml to $NEW_VERSION"
+          uv lock --project scraper
+          echo "Updated manifest.json, scraper/pyproject.toml, and scraper/uv.lock to $NEW_VERSION"
 
       - name: Commit, tag, and push
         if: env.SKIP_RELEASE != 'true'
@@ -115,7 +120,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://oauth2:${REPO_PAT}@github.com/${{ github.repository }}
-          git add custom_components/package_tracker/manifest.json scraper/pyproject.toml
+          git add custom_components/package_tracker/manifest.json scraper/pyproject.toml scraper/uv.lock
           git commit -m "chore: bump version to ${NEW_VERSION}"
           git tag "v${NEW_VERSION}"
           git push origin HEAD --tags
