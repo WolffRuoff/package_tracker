@@ -16,7 +16,7 @@ class TestCarrier:
         assert Carrier.FEDEX == "fedex"
 
     def test_carrier_count(self):
-        assert len(Carrier) == 3
+        assert len(Carrier) == 4
 
 
 class TestTrackingStatus:
