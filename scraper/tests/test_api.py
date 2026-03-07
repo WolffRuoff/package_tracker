@@ -139,3 +139,43 @@ class TestPackagesEndpoints:
             assert resp.status_code == 503
         finally:
             app_module.scheduler = original
+
+    @pytest.mark.asyncio
+    async def test_refresh_returns_package_response(self, client):
+        """Refresh should return the updated PackageResponse after scraping."""
+        import scraper.app as app_module
+
+        tracking_number = "92001234567890123456"
+        await store.add_package(tracking_number, "usps", "Test Package")
+
+        mock_scheduler = AsyncMock()
+        mock_scheduler.refresh_package = AsyncMock()
+        original = app_module.scheduler
+        app_module.scheduler = mock_scheduler
+        try:
+            resp = await client.post(f"/api/packages/{tracking_number}/refresh")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["tracking_number"] == tracking_number
+            assert data["carrier"] == "usps"
+            assert data["label"] == "Test Package"
+            assert "status" in data
+            assert "tracking_url" in data
+            mock_scheduler.refresh_package.assert_called_once_with(tracking_number)
+        finally:
+            app_module.scheduler = original
+
+    @pytest.mark.asyncio
+    async def test_refresh_returns_404_when_package_not_found(self, client):
+        """Refresh should return 404 when package does not exist in DB."""
+        import scraper.app as app_module
+
+        mock_scheduler = AsyncMock()
+        mock_scheduler.refresh_package = AsyncMock()
+        original = app_module.scheduler
+        app_module.scheduler = mock_scheduler
+        try:
+            resp = await client.post("/api/packages/NONEXISTENT/refresh")
+            assert resp.status_code == 404
+        finally:
+            app_module.scheduler = original

@@ -45,9 +45,22 @@ class ScraperApiClient:
         """Remove a package from the scraper."""
         await self._delete(f"/api/packages/{tracking_number}")
 
-    async def async_refresh_package(self, tracking_number: str) -> None:
-        """Force a re-scrape of a package."""
-        await self._post(f"/api/packages/{tracking_number}/refresh")
+    async def async_refresh_package(self, tracking_number: str) -> dict:
+        """Force a re-scrape of a package. Returns updated package data."""
+        url = f"{self._base_url}/api/packages/{tracking_number}/refresh"
+        try:
+            async with self._session.post(
+                url, timeout=aiohttp.ClientTimeout(total=120)
+            ) as resp:
+                if resp.status >= 400:
+                    text = await resp.text()
+                    raise ScraperApiError(
+                        f"POST /api/packages/{tracking_number}/refresh "
+                        f"returned {resp.status}: {text}"
+                    )
+                return await resp.json()
+        except aiohttp.ClientError as err:
+            raise ScraperApiError(f"Refresh {tracking_number} failed: {err}") from err
 
     async def _get(self, path: str) -> dict | list:
         url = f"{self._base_url}{path}"

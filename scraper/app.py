@@ -122,13 +122,16 @@ async def remove_package(tracking_number: str):
         raise HTTPException(status_code=404, detail="Package not found")
 
 
-@app.post("/api/packages/{tracking_number}/refresh", status_code=202)
+@app.post("/api/packages/{tracking_number}/refresh", response_model=PackageResponse)
 async def refresh_package(tracking_number: str):
     """Force an immediate re-scrape of a package."""
     if scheduler is None:
         raise HTTPException(status_code=503, detail="Scheduler not running")
     await scheduler.refresh_package(tracking_number)
-    return {"status": "refresh_queued"}
+    pkg = await store.get_package(tracking_number)
+    if pkg is None:
+        raise HTTPException(status_code=404, detail="Package not found")
+    return _build_package_response(pkg)
 
 
 @app.get("/api/health", response_model=HealthResponse)

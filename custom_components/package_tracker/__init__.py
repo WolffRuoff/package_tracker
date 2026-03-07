@@ -13,12 +13,50 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
+import logging
+
 from .api_client import ScraperApiError
 from .carriers import detect_carrier
-from .const import CONF_PACKAGES, CONF_SCRAPER_URL, DEFAULT_SCRAPER_URL, DOMAIN
+from .carriers.base import TrackingEvent, TrackingResult
+from .const import CONF_PACKAGES, CONF_SCRAPER_URL, DEFAULT_SCRAPER_URL, DOMAIN, Carrier, TrackingStatus
 from .coordinator import PackageTrackerCoordinator
 
+_LOGGER = logging.getLogger(__name__)
+
 PLATFORMS = ["sensor"]
+
+
+def _parse_package_dict(pkg: dict) -> TrackingResult | None:
+    """Parse a scraper package dict into a TrackingResult. Returns None on error."""
+    from datetime import datetime
+    try:
+        events = [
+            TrackingEvent(
+                timestamp=datetime.fromisoformat(e["timestamp"]),
+                location=e["location"],
+                description=e["description"],
+                status=TrackingStatus(e["status"]),
+            )
+            for e in pkg.get("events", [])
+        ]
+        return TrackingResult(
+            carrier=Carrier(pkg["carrier"]),
+            tracking_number=pkg["tracking_number"],
+            status=TrackingStatus(pkg.get("status", "unknown")),
+            raw_status=pkg.get("raw_status", ""),
+            estimated_delivery=(
+                datetime.fromisoformat(pkg["estimated_delivery"])
+                if pkg.get("estimated_delivery") else None
+            ),
+            last_updated=(
+                datetime.fromisoformat(pkg["last_updated"])
+                if pkg.get("last_updated") else None
+            ),
+            events=events,
+            tracking_url=pkg.get("tracking_url"),
+        )
+    except (ValueError, KeyError, TypeError):
+        return None
 
 ADD_PACKAGE_SCHEMA = vol.Schema(
     {
@@ -87,6 +125,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await client.async_add_package(tracking_number, carrier, label)
             except ScraperApiError as err:
                 raise HomeAssistantError(f"Scraper error: {err}") from err
+
+            try:
+                pkg_data = await client.async_refresh_package(tracking_number)
+                result = _parse_package_dict(pkg_data)
+                if result:
+                    new_data = {**(coord.data or {}), tracking_number: result}
+                    coord.async_set_updated_data(new_data)
+            except ScraperApiError:
+                _LOGGER.warning(
+                    "Could not trigger immediate refresh for %s; will scrape on next cycle",
+                    tracking_number,
+                )
 
             packages.append(
                 {"label": label, "tracking_number": tracking_number, "carrier": carrier}

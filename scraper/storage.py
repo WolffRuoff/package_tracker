@@ -111,6 +111,24 @@ class PackageStore:
         await self._db.commit()
         return cursor.rowcount > 0
 
+    async def get_package(self, tracking_number: str) -> dict | None:
+        """Return a single package with its latest tracking result."""
+        assert self._db is not None
+        cursor = await self._db.execute(
+            """
+            SELECT p.tracking_number, p.carrier, p.label, p.created_at,
+                   COALESCE(r.status, ?) AS status,
+                   COALESCE(r.raw_status, '') AS raw_status,
+                   r.estimated_delivery, r.last_updated, r.events_json
+            FROM packages p
+            LEFT JOIN tracking_results r ON p.tracking_number = r.tracking_number
+            WHERE p.tracking_number = ?
+            """,
+            (TrackingStatus.UNKNOWN, tracking_number),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
     async def get_tracking_result(self, tracking_number: str) -> dict | None:
         """Return the latest tracking result for a package."""
         assert self._db is not None

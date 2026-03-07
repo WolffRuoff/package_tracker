@@ -70,6 +70,7 @@ class PackageTrackerCoordinator(DataUpdateCoordinator[dict[str, TrackingResult]]
         self.update_interval = self._jittered_interval()
 
         previous = self.data or {}
+
         client = self._ensure_client()
 
         try:
