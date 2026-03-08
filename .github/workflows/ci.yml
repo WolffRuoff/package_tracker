@@ -1,7 +1,9 @@
-name: Auto Release
+name: CI
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -10,7 +12,51 @@ permissions:
   packages: write
 
 jobs:
+  validate-hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: HACS Validation
+        uses: hacs/action@main
+        with:
+          category: integration
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync
+      - run: uv run pytest tests/ --cov=custom_components/package_tracker --cov-report=term --cov-report=xml
+      - name: Generate coverage badge
+        run: uv run genbadge coverage -i coverage.xml -o coverage.svg
+      - name: Upload coverage badge
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-badge
+          path: coverage.svg
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: cd frontend-src && npm ci && npm run build
+      - name: Upload built card
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-card
+          path: custom_components/package_tracker/frontend/package-tracker-card.js
+
   release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    needs: [validate-hacs, test, build-frontend]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,6 +73,20 @@ jobs:
             echo "SKIP_RELEASE=true" >> "$GITHUB_ENV"
             echo "Skipping release — this is a version-bump commit from the bot."
           fi
+
+      - name: Download coverage badge
+        if: env.SKIP_RELEASE != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-badge
+          path: .
+
+      - name: Download built frontend card
+        if: env.SKIP_RELEASE != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-card
+          path: custom_components/package_tracker/frontend
 
       - name: Get latest tag
         if: env.SKIP_RELEASE != 'true'
@@ -120,6 +180,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://oauth2:${REPO_PAT}@github.com/${{ github.repository }}
+          git add -f coverage.svg custom_components/package_tracker/frontend/package-tracker-card.js
           git add custom_components/package_tracker/manifest.json scraper/pyproject.toml scraper/uv.lock
           git commit -m "chore: bump version to ${NEW_VERSION}"
           git tag "v${NEW_VERSION}"
