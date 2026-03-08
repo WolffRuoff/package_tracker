@@ -4,33 +4,16 @@ from __future__ import annotations
 
 import os
 
-import voluptuous as vol
-
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import config_validation as cv
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
-import logging
-
-from .api_client import ScraperApiError
-from .carriers import detect_carrier
-from .const import CONF_PACKAGES, CONF_SCRAPER_URL, DEFAULT_SCRAPER_URL, DOMAIN
-from .coordinator import PackageTrackerCoordinator, parse_package_dict
-
-_LOGGER = logging.getLogger(__name__)
+from .const import CONF_SCRAPER_URL, DEFAULT_SCRAPER_URL, DOMAIN
+from .coordinator import PackageTrackerCoordinator
+from .services import register_services, unregister_services
 
 PLATFORMS = ["sensor"]
-
-ADD_PACKAGE_SCHEMA = vol.Schema(
-    {
-        vol.Required("tracking_number"): cv.string,
-        vol.Required("label"): cv.string,
-        vol.Optional("carrier", default=""): cv.string,
-    }
-)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -57,64 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Register add_package service (once per domain)
-    if not hass.services.has_service(DOMAIN, "add_package"):
-
-        async def handle_add_package(call: ServiceCall) -> None:
-            coordinators = list(hass.data[DOMAIN].values())
-            if not coordinators:
-                raise HomeAssistantError("Package Tracker is not configured")
-            coord: PackageTrackerCoordinator = coordinators[0]
-            cfg_entry = coord.entry
-
-            tracking_number = call.data["tracking_number"].strip()
-            label = call.data["label"].strip()
-            carrier = call.data.get("carrier", "").strip()
-
-            if not carrier:
-                detected = detect_carrier(tracking_number)
-                if detected:
-                    carrier = detected.value
-                else:
-                    raise HomeAssistantError(
-                        f"Cannot auto-detect carrier for {tracking_number}"
-                    )
-
-            packages = list(cfg_entry.options.get(CONF_PACKAGES, []))
-            if any(p["tracking_number"] == tracking_number for p in packages):
-                raise HomeAssistantError(
-                    f"{tracking_number} is already being tracked"
-                )
-
-            client = coord._ensure_client()
-            try:
-                await client.async_add_package(tracking_number, carrier, label)
-            except ScraperApiError as err:
-                raise HomeAssistantError(f"Scraper error: {err}") from err
-
-            try:
-                pkg_data = await client.async_refresh_package(tracking_number)
-                result = parse_package_dict(pkg_data)
-                if result:
-                    new_data = {**(coord.data or {}), tracking_number: result}
-                    coord.async_set_updated_data(new_data)
-            except ScraperApiError:
-                _LOGGER.warning(
-                    "Could not trigger immediate refresh for %s; will scrape on next cycle",
-                    tracking_number,
-                )
-
-            packages.append(
-                {"label": label, "tracking_number": tracking_number, "carrier": carrier}
-            )
-            hass.config_entries.async_update_entry(
-                cfg_entry,
-                options={**cfg_entry.options, CONF_PACKAGES: packages},
-            )
-
-        hass.services.async_register(
-            DOMAIN, "add_package", handle_add_package, schema=ADD_PACKAGE_SCHEMA
-        )
+    register_services(hass)
 
     # Reload on options change (package add/remove)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -133,5 +59,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
         if not hass.data[DOMAIN]:
-            hass.services.async_remove(DOMAIN, "add_package")
+            unregister_services(hass)
     return unload_ok

@@ -24,9 +24,52 @@ export const cardStyles = css`
     font-weight: 500;
   }
 
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .package-count {
     font-size: 0.75em;
     color: var(--secondary-text-color);
+  }
+
+  .refresh-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--secondary-text-color);
+    transition: background-color 0.2s, color 0.2s;
+    padding: 0;
+  }
+
+  .refresh-btn:hover {
+    background-color: var(--divider-color);
+    color: var(--primary-text-color);
+  }
+
+  .refresh-btn ha-icon {
+    --mdc-icon-size: 20px;
+  }
+
+  .refresh-btn.spinning ha-icon {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .no-packages {
@@ -38,86 +81,49 @@ export const cardStyles = css`
   .package-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
   }
 
   .package-row {
     display: flex;
-    align-items: center;
-    padding: 12px;
-    border-radius: 8px;
+    flex-direction: column;
+    padding: 16px;
+    border-radius: 12px;
     background: var(--card-background-color, var(--ha-card-background));
     border: 1px solid var(--divider-color);
-    gap: 12px;
+    border-left: 4px solid var(--pkg-unknown);
+    gap: 6px;
   }
 
-  .status-icon {
-    flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+  .package-row-primary {
     display: flex;
     align-items: center;
-    justify-content: center;
-    color: white;
-  }
-
-  .status-icon ha-icon {
-    --mdc-icon-size: 22px;
-  }
-
-  .package-info {
-    flex: 1;
-    min-width: 0;
+    gap: 8px;
   }
 
   .package-label {
+    flex: 1;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
   }
 
-  .package-details {
-    display: flex;
+  .status-badge {
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    font-size: 0.85em;
-    color: var(--secondary-text-color);
-    margin-top: 2px;
-  }
-
-  .carrier-badge {
-    display: inline-block;
-    padding: 1px 6px;
-    border-radius: 4px;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
     font-size: 0.75em;
     font-weight: 600;
-    text-transform: uppercase;
-    background: var(--primary-color);
-    color: var(--text-primary-color);
-  }
-
-  .tracking-number {
-    font-family: monospace;
-    font-size: 0.85em;
-  }
-
-  .package-status {
-    text-align: right;
+    white-space: nowrap;
     flex-shrink: 0;
   }
 
-  .status-text {
-    font-size: 0.85em;
-    font-weight: 500;
-    text-transform: capitalize;
-  }
-
-  .eta {
-    font-size: 0.75em;
-    color: var(--secondary-text-color);
-    margin-top: 2px;
+  .status-badge ha-icon {
+    --mdc-icon-size: 14px;
   }
 
   .tracking-link {
@@ -125,8 +131,8 @@ export const cardStyles = css`
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     color: var(--secondary-text-color);
     text-decoration: none;
@@ -139,6 +145,60 @@ export const cardStyles = css`
   }
 
   .tracking-link ha-icon {
-    --mdc-icon-size: 18px;
+    --mdc-icon-size: 16px;
+  }
+
+  .package-row-secondary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.85em;
+    color: var(--secondary-text-color);
+    gap: 8px;
+  }
+
+  .secondary-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .carrier-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    background: var(--primary-color);
+    color: var(--text-primary-color);
+    flex-shrink: 0;
+  }
+
+  .tracking-number {
+    font-family: monospace;
+    font-size: 0.85em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .eta {
+    font-size: 0.85em;
+    color: var(--secondary-text-color);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .package-row-event {
+    font-size: 0.8em;
+    font-style: italic;
+    color: var(--secondary-text-color);
+    opacity: 0.8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 `;
