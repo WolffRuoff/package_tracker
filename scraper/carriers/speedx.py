@@ -110,7 +110,7 @@ class SpeedXProvider(CarrierProvider):
         return TrackingStatus.UNKNOWN
 
     def _parse_delivery_date(self, edd_text: str) -> datetime | None:
-        cleaned = re.sub(r'^Delivered:\s*', '', edd_text).strip()
+        cleaned = re.sub(r'^(Delivered|Estimated Delivery Date):\s*', '', edd_text).strip()
         for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y"):
             try:
                 return datetime.strptime(cleaned, fmt)

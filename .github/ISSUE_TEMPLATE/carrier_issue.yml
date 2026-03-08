@@ -1,0 +1,43 @@
+name: Carrier Tracking Issue
+description: Report a problem with scraping a specific carrier (bot detection, page layout change, etc.)
+labels: ["carrier-issue"]
+body:
+  - type: dropdown
+    id: carrier
+    attributes:
+      label: Carrier
+      options:
+        - USPS
+        - UPS
+        - FedEx
+        - SpeedX
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What's broken
+    validations:
+      required: true
+
+  - type: input
+    id: tracking_number
+    attributes:
+      label: Tracking number
+      description: >
+        A tracking number is essential for reproducing and debugging scraping issues.
+        Troubleshooting is extremely difficult without one. If you're not comfortable
+        sharing it publicly, you can DM it to @WolffRuoff.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Scraper logs
+      description: Relevant log output from the scraper container
+      render: shell
+    validations:
+      required: false

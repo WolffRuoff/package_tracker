@@ -1,0 +1,58 @@
+name: Bug Report
+description: Report a bug with the Package Tracker integration or scraper
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened vs what you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: carrier
+    attributes:
+      label: Carrier
+      description: Which carrier is affected, if applicable
+      options:
+        - USPS
+        - UPS
+        - FedEx
+        - SpeedX
+        - N/A
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Version information
+      placeholder: |
+        HA version: 2024.x.x
+        Integration version: x.x.x
+        Scraper version: x.x.x
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log output
+      render: shell
+    validations:
+      required: false

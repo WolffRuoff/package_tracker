@@ -67,6 +67,11 @@ def speedx_delivered_html():
 
 
 @pytest.fixture
+def speedx_in_transit_html():
+    return (FIXTURES_DIR / "speedx" / "in_transit.html").read_text()
+
+
+@pytest.fixture
 def speedx_order_placed_html():
     return (FIXTURES_DIR / "speedx" / "order_placed.html").read_text()
 
