@@ -7,5 +7,6 @@
   "codeowners": [],
   "config_flow": true,
   "iot_class": "cloud_polling",
-  "requirements": []
+  "requirements": [],
+  "dependencies": ["http"]
 }
