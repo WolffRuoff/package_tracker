@@ -44,6 +44,7 @@ interface PackageData {
 export class PackageTrackerCard extends LitElement {
   @property({ attribute: false }) public hass: any;
   @state() private _config?: PackageTrackerCardConfig;
+  @state() private _refreshing = false;
 
   static styles = cardStyles;
 
@@ -82,13 +83,35 @@ export class PackageTrackerCard extends LitElement {
       <ha-card>
         <div class="card-header">
           <span>${title}</span>
-          <span class="package-count">${packages.length} package${packages.length !== 1 ? "s" : ""}</span>
+          <div class="header-actions">
+            <span class="package-count">${packages.length} package${packages.length !== 1 ? "s" : ""}</span>
+            <button
+              class="refresh-btn ${this._refreshing ? "spinning" : ""}"
+              @click="${this._handleRefresh}"
+              title="Refresh all packages"
+              ?disabled="${this._refreshing}"
+            >
+              <ha-icon icon="mdi:refresh"></ha-icon>
+            </button>
+          </div>
         </div>
         ${packages.length === 0
           ? html`<div class="no-packages">No packages being tracked</div>`
           : html`<div class="package-list">${packages.map((pkg) => this._renderPackage(pkg))}</div>`}
       </ha-card>
     `;
+  }
+
+  private async _handleRefresh(): Promise<void> {
+    if (this._refreshing || !this.hass) return;
+    this._refreshing = true;
+    try {
+      await this.hass.callService("package_tracker", "refresh_packages", {});
+    } catch {
+      // Silently handle — HA will show its own error toast
+    } finally {
+      this._refreshing = false;
+    }
   }
 
   private _getPackages(): PackageData[] {
@@ -158,34 +181,42 @@ export class PackageTrackerCard extends LitElement {
       }
     }
 
+    const latestEvent = attrs.events?.[0]?.description || "";
+
     return html`
-      <div class="package-row">
-        <div class="status-icon" style="background-color: ${color}">
-          <ha-icon icon="${icon}"></ha-icon>
+      <div class="package-row" style="border-left-color: ${color}">
+        <div class="package-row-primary">
+          <span class="package-label">${attrs.label || "Package"}</span>
+          <span
+            class="status-badge"
+            style="color: ${color}; background: color-mix(in srgb, ${color} 12%, transparent)"
+          >
+            <ha-icon icon="${icon}"></ha-icon>
+            ${statusLabel}
+          </span>
+          ${attrs.tracking_url
+            ? html`<a
+                class="tracking-link"
+                href="${attrs.tracking_url}"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="View on carrier website"
+                @click="${(e: Event) => e.stopPropagation()}"
+              >
+                <ha-icon icon="mdi:open-in-new"></ha-icon>
+              </a>`
+            : nothing}
         </div>
-        <div class="package-info">
-          <div class="package-label">${attrs.label || "Package"}</div>
-          <div class="package-details">
+        <div class="package-row-secondary">
+          <div class="secondary-left">
             <span class="carrier-badge">${attrs.carrier || ""}</span>
             <span class="tracking-number">${attrs.tracking_number || ""}</span>
           </div>
+          ${etaStr
+            ? html`<span class="eta">${status === "delivered" ? etaStr : `ETA: ${etaStr}`}</span>`
+            : nothing}
         </div>
-        <div class="package-status">
-          <div class="status-text" style="color: ${color}">${statusLabel}</div>
-          ${etaStr ? html`<div class="eta">ETA: ${etaStr}</div>` : nothing}
-        </div>
-        ${attrs.tracking_url
-          ? html`<a
-              class="tracking-link"
-              href="${attrs.tracking_url}"
-              target="_blank"
-              rel="noopener noreferrer"
-              title="View on carrier website"
-              @click="${(e: Event) => e.stopPropagation()}"
-            >
-              <ha-icon icon="mdi:open-in-new"></ha-icon>
-            </a>`
-          : nothing}
+        ${latestEvent ? html`<div class="package-row-event">${latestEvent}</div>` : nothing}
       </div>
     `;
   }

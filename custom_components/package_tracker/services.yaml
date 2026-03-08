@@ -32,3 +32,8 @@ add_package:
               value: ups
             - label: FedEx
               value: fedex
+
+refresh_packages:
+  name: Refresh Packages
+  description: Force a re-scrape of all tracked packages from their carrier websites.
+  fields: {}
