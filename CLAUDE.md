@@ -28,7 +28,7 @@ HA Coordinator ◄──────── GET /api/packages (polling)
 - **HA is the UI layer** — users manage packages via HA config flow OR the `add_package` service, both of which forward to the scraper
 - **Scraper is the data layer** — owns the package list in SQLite, runs the polling scheduler, caches results
 - **Communication** — HA coordinator polls `GET /api/packages` on a 30-min jittered interval
-- **`add_package` service** — registered once per domain in `async_setup_entry`, removed in `async_unload_entry` when the last entry is gone; reuses the coordinator's persistent `aiohttp` session via `coord._ensure_client()`
+- **Services** (`services.py`) — `add_package` and `refresh_packages` handlers live in `services.py`. `register_services(hass)` / `unregister_services(hass)` are called from `__init__.py` during setup/unload. Handlers take `hass` explicitly (bound via `functools.partial`). Registered once per domain; removed when the last config entry is unloaded. Reuses the coordinator's persistent `aiohttp` session via `coord._ensure_client()`
 
 ## Build Commands
 
@@ -75,7 +75,7 @@ FastAPI app on port 8230 (configurable via `PORT` env var). SQLite DB at `/data/
 
 **Coordinator:** Polls `GET /api/packages` from scraper, parses JSON into `TrackingResult` objects. Keeps jittered interval and delivered auto-removal logic HA-side. `_ensure_client()` returns the shared `ScraperApiClient` — use it instead of creating a new `aiohttp.ClientSession`.
 
-**`add_package` service:** Defined in `__init__.py`. Schema: `tracking_number` (required), `label` (required), `carrier` (optional, auto-detected via `detect_carrier()` if blank). Documented via `services.yaml` so HA Dev Tools shows full field descriptions. Registered once per domain; removed when the last config entry is unloaded.
+**Services** (`services.py`): `add_package` — schema: `tracking_number` (required), `label` (required), `carrier` (optional, auto-detected via `detect_carrier()` if blank). `refresh_packages` — no fields, force re-scrapes all tracked packages. Both documented via `services.yaml` so HA Dev Tools shows full field descriptions.
 
 **Carrier providers (HA side):** Stripped to validation + URL only. No scraping, no Playwright, no BeautifulSoup. Used for `detect_carrier()` auto-detection and tracking URL generation.
 
@@ -85,7 +85,7 @@ FastAPI app on port 8230 (configurable via `PORT` env var). SQLite DB at `/data/
 
 ## Testing
 
-**HA integration tests** (`tests/`): Uses `pytest` + `pytest-asyncio`. Mock `aiohttp` responses via `mock_scraper_api` fixture. Carrier tests cover validation + URL only. `test_init.py` covers the `add_package` service registration, unload cleanup, and handler behavior.
+**HA integration tests** (`tests/`): Uses `pytest` + `pytest-asyncio`. Mock `aiohttp` responses via `mock_scraper_api` fixture. Carrier tests cover validation + URL only. `test_init.py` covers setup/unload orchestration (service registration, removal). `test_services.py` covers handler logic directly (calling `handle_add_package`/`handle_refresh_packages` with mock coordinator in `hass.data`).
 
 **Scraper tests** (`scraper/tests/`): Uses `pytest` + `pytest-asyncio`. HTML fixtures in `scraper/tests/fixtures/`. Storage tests use in-memory SQLite. API tests use `httpx` `AsyncClient` with FastAPI's ASGI transport.
 
@@ -110,10 +110,11 @@ When carriers add bot protection, the correct response is to improve Camoufox co
 - Frontend uses Lit 3.x with TypeScript decorators; strict mode enabled
 - Sensor unique IDs: `package_tracker_{tracking_number}`
 - Sensor `extra_state_attributes` includes `tracking_url` from scraper API
-- `services.yaml` in the integration directory makes the `add_package` service visible with full field docs in HA Developer Tools
+- `services.yaml` in the integration directory makes the `add_package` and `refresh_packages` services visible with full field docs in HA Developer Tools
 
 ## Testing Gotchas
 
 - **Never** `from package_tracker.__init__ import` in tests — this creates a separate module in `sys.modules` with a different `__dict__`, breaking `patch("package_tracker.X")`. Use `from package_tracker import` instead.
 - Patch the coordinator where it's used: `patch("package_tracker.PackageTrackerCoordinator", return_value=mock_coord)`. Set `mock_coord.async_config_entry_first_refresh = AsyncMock()` inside the patch context.
-- Service handler is captured after `async_setup_entry` via `mock_hass.services.async_register.call_args[0][2]`.
+- Service handler tests call `handle_add_package(hass, call)` / `handle_refresh_packages(hass, call)` directly with a mock coordinator in `hass.data[DOMAIN]` — no need for `_setup_entry` helpers.
+- Setup/unload tests patch `register_services`/`unregister_services` at the module level (`patch("package_tracker.register_services")`).
