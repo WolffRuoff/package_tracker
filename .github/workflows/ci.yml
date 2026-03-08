@@ -21,6 +21,12 @@ jobs:
         with:
           category: integration
 
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -56,7 +62,7 @@ jobs:
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    needs: [validate-hacs, test, build-frontend]
+    needs: [validate-hacs, hassfest, test, build-frontend]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
