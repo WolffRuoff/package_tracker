@@ -99,6 +99,24 @@ class TestParseTrackingPage:
         assert result.estimated_delivery.day == 4
         assert result.estimated_delivery.year == 2026
 
+    def test_in_transit_status(self, provider, speedx_in_transit_html):
+        result = TrackingResult(carrier=Carrier.SPEEDX, tracking_number="SPXBOS039706647818")
+        provider._parse_tracking_page(speedx_in_transit_html, result)
+        assert result.status == TrackingStatus.OUT_FOR_DELIVERY
+
+    def test_in_transit_events_count(self, provider, speedx_in_transit_html):
+        result = TrackingResult(carrier=Carrier.SPEEDX, tracking_number="SPXBOS039706647818")
+        provider._parse_tracking_page(speedx_in_transit_html, result)
+        assert len(result.events) == 3
+
+    def test_in_transit_estimated_delivery(self, provider, speedx_in_transit_html):
+        result = TrackingResult(carrier=Carrier.SPEEDX, tracking_number="SPXBOS039706647818")
+        provider._parse_tracking_page(speedx_in_transit_html, result)
+        assert result.estimated_delivery is not None
+        assert result.estimated_delivery.month == 3
+        assert result.estimated_delivery.day == 8
+        assert result.estimated_delivery.year == 2026
+
     def test_order_placed_status(self, provider, speedx_order_placed_html):
         result = TrackingResult(carrier=Carrier.SPEEDX, tracking_number="SPXBOS039706647818")
         provider._parse_tracking_page(speedx_order_placed_html, result)
@@ -151,6 +169,13 @@ class TestParseDeliveryDate:
         assert result is not None
         assert result.month == 3
         assert result.day == 4
+
+    def test_estimated_delivery_date_prefix_stripped(self, provider):
+        result = provider._parse_delivery_date("Estimated Delivery Date: March 8, 2026")
+        assert result is not None
+        assert result.month == 3
+        assert result.day == 8
+        assert result.year == 2026
 
     def test_invalid_returns_none(self, provider):
         assert provider._parse_delivery_date("not a date") is None

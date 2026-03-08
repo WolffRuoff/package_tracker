@@ -1,0 +1,38 @@
+name: New Carrier Request
+description: Request support for a new shipping carrier
+labels: ["carrier-request"]
+body:
+  - type: input
+    id: carrier_name
+    attributes:
+      label: Carrier name
+    validations:
+      required: true
+
+  - type: input
+    id: carrier_url
+    attributes:
+      label: Carrier website / tracking URL
+      description: The carrier's tracking page URL
+      placeholder: "https://www.example.com/track"
+    validations:
+      required: true
+
+  - type: input
+    id: tracking_number
+    attributes:
+      label: Tracking number
+      description: >
+        A tracking number helps us test the carrier's page. Troubleshooting is extremely
+        difficult without one. If you're not comfortable sharing it publicly, you can DM
+        it to @WolffRuoff.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Tracking number format, example URLs, or any other relevant info
+    validations:
+      required: false

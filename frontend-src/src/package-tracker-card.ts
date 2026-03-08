@@ -121,9 +121,19 @@ export class PackageTrackerCard extends LitElement {
       expired: 5,
       delivered: 6,
     };
-    packages.sort(
-      (a, b) => (priority[a.state] ?? 4) - (priority[b.state] ?? 4)
-    );
+    packages.sort((a, b) => {
+      const pa = priority[a.state] ?? 4;
+      const pb = priority[b.state] ?? 4;
+      if (pa !== pb) return pa - pb;
+
+      const etaA = a.attributes.estimated_delivery
+        ? new Date(a.attributes.estimated_delivery).getTime()
+        : Infinity;
+      const etaB = b.attributes.estimated_delivery
+        ? new Date(b.attributes.estimated_delivery).getTime()
+        : Infinity;
+      return etaA - etaB;
+    });
 
     return packages;
   }
