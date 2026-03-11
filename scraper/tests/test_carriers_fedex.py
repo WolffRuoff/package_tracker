@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from scraper.carriers.base import TrackingResult
@@ -15,6 +17,53 @@ def provider():
 
 
 VALID_TRACKING_12 = "123456789012"
+
+FEDEX_API_JSON_DELIVERED = {
+    "TrackPackagesResponse": {
+        "packageList": [
+            {
+                "keyStatus": "Delivered",
+                "displayEstDeliveryDateTime": "01/15/2025 00:00:00",
+                "scanEventList": [
+                    {
+                        "date": "01/15/2025",
+                        "time": "10:00 AM",
+                        "eventDescription": "Delivered",
+                        "scanLocation": "Springfield, IL 62701 US",
+                        "status": "DL",
+                    },
+                    {
+                        "date": "01/15/2025",
+                        "time": "06:00 AM",
+                        "eventDescription": "On FedEx vehicle for delivery",
+                        "scanLocation": "Springfield, IL 62701 US",
+                        "status": "OD",
+                    },
+                ],
+            }
+        ]
+    }
+}
+
+FEDEX_API_JSON_IN_TRANSIT = {
+    "TrackPackagesResponse": {
+        "packageList": [
+            {
+                "keyStatus": "In transit",
+                "displayEstDeliveryDateTime": "01/16/2025 00:00:00",
+                "scanEventList": [
+                    {
+                        "date": "01/14/2025",
+                        "time": "02:30 PM",
+                        "eventDescription": "Departed FedEx location",
+                        "scanLocation": "Memphis, TN 38118 US",
+                        "status": "DP",
+                    }
+                ],
+            }
+        ]
+    }
+}
 
 
 class TestValidateTrackingNumber:
@@ -81,16 +130,109 @@ class TestParseTrackingPage:
         assert result.events == []
 
 
+class TestParseTrackingJson:
+    def test_delivered_status(self, provider):
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_json(FEDEX_API_JSON_DELIVERED, result)
+        assert result.status == TrackingStatus.DELIVERED
+        assert result.raw_status == "Delivered"
+
+    def test_delivered_estimated_delivery(self, provider):
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_json(FEDEX_API_JSON_DELIVERED, result)
+        assert result.estimated_delivery is not None
+        assert result.estimated_delivery.month == 1
+        assert result.estimated_delivery.day == 15
+        assert result.estimated_delivery.year == 2025
+
+    def test_delivered_events(self, provider):
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_json(FEDEX_API_JSON_DELIVERED, result)
+        assert len(result.events) == 2
+        assert result.events[0].description == "Delivered"
+        assert result.events[0].location == "Springfield, IL 62701 US"
+        assert result.events[0].status == TrackingStatus.DELIVERED
+
+    def test_in_transit_status(self, provider):
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_json(FEDEX_API_JSON_IN_TRANSIT, result)
+        assert result.status == TrackingStatus.IN_TRANSIT
+
+    def test_in_transit_events(self, provider):
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_json(FEDEX_API_JSON_IN_TRANSIT, result)
+        assert len(result.events) == 1
+        assert result.events[0].description == "Departed FedEx location"
+
+    def test_empty_package_list(self, provider):
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        data = {"TrackPackagesResponse": {"packageList": []}}
+        provider._parse_tracking_json(data, result)
+        assert result.status == TrackingStatus.UNKNOWN
+        assert result.events == []
+
+    def test_missing_key(self, provider):
+        result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
+        provider._parse_tracking_json({}, result)
+        assert result.status == TrackingStatus.UNKNOWN
+
+
 class TestAsyncTrack:
     @pytest.mark.asyncio
-    async def test_successful_tracking(
+    async def test_json_path_two_goto_calls(self, provider, mock_browser):
+        """When API response is intercepted, result is populated via JSON path."""
+        browser, mock_page = mock_browser
+
+        captured_callbacks: list = []
+        mock_page.on = MagicMock(
+            side_effect=lambda event, cb: captured_callbacks.append(cb)
+            if event == "response"
+            else None
+        )
+
+        mock_response = AsyncMock()
+        mock_response.url = "https://www.fedex.com/trackingCal/track"
+        mock_response.json = AsyncMock(return_value=FEDEX_API_JSON_DELIVERED)
+
+        call_count = 0
+
+        async def goto_side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2 and captured_callbacks:
+                await captured_callbacks[0](mock_response)
+
+        mock_page.goto.side_effect = goto_side_effect
+
+        result = await provider.async_track(VALID_TRACKING_12, browser)
+
+        assert mock_page.goto.call_count == 2
+        # First call = homepage warm-up
+        first_url = mock_page.goto.call_args_list[0].args[0]
+        assert "home" in first_url
+        # Second call = tracking URL
+        second_url = mock_page.goto.call_args_list[1].args[0]
+        assert VALID_TRACKING_12 in second_url
+
+        assert result.carrier == Carrier.FEDEX
+        assert result.status == TrackingStatus.DELIVERED
+        assert len(result.events) == 2
+        assert result.last_updated is not None
+        # wait_for_selector should NOT be called in the JSON path
+        mock_page.wait_for_selector.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_html_fallback_when_no_api_response(
         self, provider, mock_browser, fedex_delivered_html
     ):
+        """When no API response is intercepted, falls back to HTML parsing."""
         browser, mock_page = mock_browser
         mock_page.content.return_value = fedex_delivered_html
 
         result = await provider.async_track(VALID_TRACKING_12, browser)
 
+        assert mock_page.goto.call_count == 2
+        mock_page.wait_for_selector.assert_called_once()
         assert result.carrier == Carrier.FEDEX
         assert result.status == TrackingStatus.DELIVERED
         assert len(result.events) == 3

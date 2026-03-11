@@ -84,11 +84,47 @@ class FedExProvider(CarrierProvider):
             tracking_number=tracking_number,
         )
 
-        url = self.tracking_url(tracking_number)
-        html = await self._get_page_content(browser, url, WAIT_SELECTOR)
-        self._parse_tracking_page(html, result)
-        result.last_updated = datetime.now()
-        return result
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        try:
+            _api_data: dict | None = None
+
+            async def _on_response(response) -> None:
+                nonlocal _api_data
+                if _api_data is None and "trackingCal" in response.url:
+                    try:
+                        _api_data = await response.json()
+                    except Exception:
+                        pass
+
+            page.on("response", _on_response)
+
+            # Warm-up: visit homepage to establish session/cookies before
+            # hitting the tracking page (mitigates Akamai bot detection)
+            await page.goto(
+                "https://www.fedex.com/en-us/home.html",
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
+
+            url = self.tracking_url(tracking_number)
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+
+            if _api_data is not None:
+                # JSON path: API response captured during navigation — skip
+                # wait_for_selector entirely to avoid TargetClosedError
+                self._parse_tracking_json(_api_data, result)
+            else:
+                # HTML fallback: wait for DOM element then parse page content
+                await page.wait_for_selector(WAIT_SELECTOR, timeout=45000)
+                html = await page.content()
+                self._parse_tracking_page(html, result)
+
+            result.last_updated = datetime.now()
+            return result
+        finally:
+            await context.close()
 
     def _parse_tracking_page(self, html: str, result: TrackingResult) -> None:
         """Parse the FedEx tracking page HTML."""
@@ -122,6 +158,49 @@ class FedExProvider(CarrierProvider):
             event = self._parse_scan_row(row)
             if event:
                 result.events.append(event)
+
+    def _parse_tracking_json(self, data: dict, result: TrackingResult) -> None:
+        """Parse FedEx internal tracking JSON from the /trackingCal/track API."""
+        try:
+            pkg = data["TrackPackagesResponse"]["packageList"][0]
+        except (KeyError, IndexError):
+            return
+
+        key_status = pkg.get("keyStatus", "")
+        if key_status:
+            result.raw_status = key_status
+            result.status = self._map_status(key_status)
+
+        eta_str = pkg.get("displayEstDeliveryDateTime", "")
+        if eta_str:
+            # Strip time component if present (e.g. "01/15/2025 00:00:00")
+            result.estimated_delivery = self._parse_date(eta_str.split(" ")[0])
+
+        for scan in pkg.get("scanEventList", []):
+            description = scan.get("eventDescription", "")
+            location = scan.get("scanLocation", "")
+            date_str = scan.get("date", "")
+            time_str = scan.get("time", "")
+
+            timestamp = datetime.now()
+            if date_str:
+                combined = f"{date_str} {time_str}".strip()
+                try:
+                    timestamp = datetime.strptime(combined, "%m/%d/%Y %I:%M %p")
+                except ValueError:
+                    parsed = self._parse_date(date_str)
+                    if parsed:
+                        timestamp = parsed
+
+            status = self._map_status(description)
+            result.events.append(
+                TrackingEvent(
+                    timestamp=timestamp,
+                    location=location,
+                    description=description,
+                    status=status,
+                )
+            )
 
     def _map_status(self, raw_status: str) -> TrackingStatus:
         """Map a raw status string to TrackingStatus."""
