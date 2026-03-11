@@ -19,25 +19,23 @@ def provider():
 VALID_TRACKING_12 = "123456789012"
 
 FEDEX_API_JSON_DELIVERED = {
-    "TrackPackagesResponse": {
-        "packageList": [
+    "output": {
+        "packages": [
             {
-                "keyStatus": "Delivered",
-                "displayEstDeliveryDateTime": "01/15/2025 00:00:00",
+                "mainStatus": "Delivered",
+                "estDeliveryDt": "2025-01-15T00:00:00+00:00",
                 "scanEventList": [
                     {
-                        "date": "01/15/2025",
-                        "time": "10:00 AM",
-                        "eventDescription": "Delivered",
+                        "date": "2025-01-15",
+                        "time": "10:00:00",
+                        "status": "Delivered",
                         "scanLocation": "Springfield, IL 62701 US",
-                        "status": "DL",
                     },
                     {
-                        "date": "01/15/2025",
-                        "time": "06:00 AM",
-                        "eventDescription": "On FedEx vehicle for delivery",
+                        "date": "2025-01-15",
+                        "time": "06:00:00",
+                        "status": "On FedEx vehicle for delivery",
                         "scanLocation": "Springfield, IL 62701 US",
-                        "status": "OD",
                     },
                 ],
             }
@@ -46,18 +44,17 @@ FEDEX_API_JSON_DELIVERED = {
 }
 
 FEDEX_API_JSON_IN_TRANSIT = {
-    "TrackPackagesResponse": {
-        "packageList": [
+    "output": {
+        "packages": [
             {
-                "keyStatus": "In transit",
-                "displayEstDeliveryDateTime": "01/16/2025 00:00:00",
+                "mainStatus": "In transit",
+                "estDeliveryDt": "2025-01-16T00:00:00+00:00",
                 "scanEventList": [
                     {
-                        "date": "01/14/2025",
-                        "time": "02:30 PM",
-                        "eventDescription": "Departed FedEx location",
+                        "date": "2025-01-14",
+                        "time": "14:30:00",
+                        "status": "Departed FedEx location",
                         "scanLocation": "Memphis, TN 38118 US",
-                        "status": "DP",
                     }
                 ],
             }
@@ -166,7 +163,7 @@ class TestParseTrackingJson:
 
     def test_empty_package_list(self, provider):
         result = TrackingResult(carrier=Carrier.FEDEX, tracking_number="TEST")
-        data = {"TrackPackagesResponse": {"packageList": []}}
+        data = {"output": {"packages": []}}
         provider._parse_tracking_json(data, result)
         assert result.status == TrackingStatus.UNKNOWN
         assert result.events == []

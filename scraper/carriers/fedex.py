@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime
@@ -89,34 +90,49 @@ class FedExProvider(CarrierProvider):
 
         try:
             _api_data: dict | None = None
+            _api_event = asyncio.Event()
 
             async def _on_response(response) -> None:
                 nonlocal _api_data
-                if _api_data is None and "trackingCal" in response.url:
+                url = response.url
+                if _api_data is None and (
+                    "trackingCal" in url
+                    or "api.fedex.com/track/" in url
+                ):
                     try:
                         _api_data = await response.json()
-                    except Exception:
-                        pass
+                        _LOGGER.info("FedEx: captured API response from %s", url)
+                        _api_event.set()
+                    except Exception as exc:
+                        _LOGGER.warning("FedEx: failed to parse %s: %s", url, exc)
 
             page.on("response", _on_response)
 
             # Warm-up: visit homepage to establish session/cookies before
-            # hitting the tracking page (mitigates Akamai bot detection)
+            # hitting the tracking page (mitigates bot detection)
             await page.goto(
                 "https://www.fedex.com/en-us/home.html",
                 wait_until="domcontentloaded",
                 timeout=30000,
             )
 
-            url = self.tracking_url(tracking_number)
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+            tracking_url = self.tracking_url(tracking_number)
+            # domcontentloaded so we don't block on networkidle before the
+            # tracking API fires; the asyncio.Event below handles the wait
+            await page.goto(tracking_url, wait_until="domcontentloaded", timeout=30000)
+
+            # Wait for the tracking API response — may fire during or after goto
+            if not _api_event.is_set():
+                try:
+                    await asyncio.wait_for(_api_event.wait(), timeout=45.0)
+                except asyncio.TimeoutError:
+                    _LOGGER.warning("FedEx: API response not captured for %s", tracking_number)
 
             if _api_data is not None:
-                # JSON path: API response captured during navigation — skip
-                # wait_for_selector entirely to avoid TargetClosedError
+                # JSON path: skip wait_for_selector entirely
                 self._parse_tracking_json(_api_data, result)
             else:
-                # HTML fallback: wait for DOM element then parse page content
+                # HTML fallback
                 await page.wait_for_selector(WAIT_SELECTOR, timeout=45000)
                 html = await page.content()
                 self._parse_tracking_page(html, result)
@@ -160,37 +176,42 @@ class FedExProvider(CarrierProvider):
                 result.events.append(event)
 
     def _parse_tracking_json(self, data: dict, result: TrackingResult) -> None:
-        """Parse FedEx internal tracking JSON from the /trackingCal/track API."""
+        """Parse FedEx tracking JSON from the api.fedex.com/track/v2/shipments API."""
         try:
-            pkg = data["TrackPackagesResponse"]["packageList"][0]
+            pkg = data["output"]["packages"][0]
         except (KeyError, IndexError):
             return
 
-        key_status = pkg.get("keyStatus", "")
-        if key_status:
-            result.raw_status = key_status
-            result.status = self._map_status(key_status)
+        # mainStatus is the human-readable status ("Picked up", "Delivered", etc.)
+        main_status = pkg.get("mainStatus", "")
+        if main_status:
+            result.raw_status = main_status
+            result.status = self._map_status(main_status)
 
-        eta_str = pkg.get("displayEstDeliveryDateTime", "")
-        if eta_str:
-            # Strip time component if present (e.g. "01/15/2025 00:00:00")
-            result.estimated_delivery = self._parse_date(eta_str.split(" ")[0])
+        # estDeliveryDt is ISO-8601 — reliable for parsing; strip timezone for naive datetime
+        est_dt = pkg.get("estDeliveryDt", "")
+        if est_dt:
+            try:
+                result.estimated_delivery = datetime.fromisoformat(est_dt).replace(tzinfo=None)
+            except ValueError:
+                pass
 
         for scan in pkg.get("scanEventList", []):
-            description = scan.get("eventDescription", "")
+            description = scan.get("status", "")
             location = scan.get("scanLocation", "")
-            date_str = scan.get("date", "")
-            time_str = scan.get("time", "")
+            date_str = scan.get("date", "")  # "YYYY-MM-DD"
+            time_str = scan.get("time", "")  # "HH:MM:SS"
 
             timestamp = datetime.now()
             if date_str:
-                combined = f"{date_str} {time_str}".strip()
+                combined = f"{date_str}T{time_str}" if time_str else date_str
                 try:
-                    timestamp = datetime.strptime(combined, "%m/%d/%Y %I:%M %p")
+                    timestamp = datetime.fromisoformat(combined)
                 except ValueError:
-                    parsed = self._parse_date(date_str)
-                    if parsed:
-                        timestamp = parsed
+                    try:
+                        timestamp = datetime.strptime(date_str, "%Y-%m-%d")
+                    except ValueError:
+                        pass
 
             status = self._map_status(description)
             result.events.append(
