@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from scraper.carriers.base import TrackingResult
-from scraper.carriers.fedex import DESCRIPTION_MAPPING, STATUS_MAPPING, FedExProvider
+from scraper.carriers.fedex import STATUS_MAPPING, FedExProvider
 from scraper.const import Carrier, TrackingStatus
 
 
@@ -260,8 +260,3 @@ class TestStatusMapping:
     def test_exception(self):
         assert STATUS_MAPPING["delivery exception"] == TrackingStatus.EXCEPTION
 
-    def test_description_delivered(self):
-        assert DESCRIPTION_MAPPING["Delivered"] == TrackingStatus.DELIVERED
-
-    def test_description_in_transit(self):
-        assert DESCRIPTION_MAPPING["In transit"] == TrackingStatus.IN_TRANSIT

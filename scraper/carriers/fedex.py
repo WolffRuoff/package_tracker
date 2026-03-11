@@ -39,17 +39,6 @@ STATUS_MAPPING: dict[str, TrackingStatus] = {
     "clearance delay": TrackingStatus.EXCEPTION,
 }
 
-DESCRIPTION_MAPPING: dict[str, TrackingStatus] = {
-    "Picked Up": TrackingStatus.PRE_TRANSIT,
-    "Shipment information sent to FedEx": TrackingStatus.PRE_TRANSIT,
-    "In transit": TrackingStatus.IN_TRANSIT,
-    "At local FedEx facility": TrackingStatus.IN_TRANSIT,
-    "On FedEx vehicle for delivery": TrackingStatus.OUT_FOR_DELIVERY,
-    "Out for Delivery": TrackingStatus.OUT_FOR_DELIVERY,
-    "Delivered": TrackingStatus.DELIVERED,
-    "Delivery exception": TrackingStatus.EXCEPTION,
-}
-
 
 class FedExProvider(CarrierProvider):
     """FedEx tracking provider via web scraping."""
