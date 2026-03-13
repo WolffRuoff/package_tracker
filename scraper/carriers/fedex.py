@@ -171,8 +171,9 @@ class FedExProvider(CarrierProvider):
         except (KeyError, IndexError):
             return
 
-        # mainStatus is the human-readable status ("Picked up", "Delivered", etc.)
-        main_status = pkg.get("mainStatus", "")
+        # keyStatus is the human-readable top-level status ("Out for delivery", "Delivered", etc.)
+        # mainStatus exists in the response but is consistently empty; keyStatus is the correct field.
+        main_status = pkg.get("keyStatus", "") or pkg.get("mainStatus", "")
         if main_status:
             result.raw_status = main_status
             result.status = self._map_status(main_status)

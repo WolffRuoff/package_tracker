@@ -116,11 +116,12 @@ class Scheduler:
             result = await provider.async_track(tracking_number, self._browser)
             elapsed = (datetime.now() - t0).total_seconds()
             _LOGGER.info(
-                "Scraped %s %s in %.1fs: status=%s estimated_delivery=%s events=%d",
+                "Scraped %s %s in %.1fs: status=%s raw_status=%r estimated_delivery=%s events=%d",
                 carrier.value,
                 tracking_number,
                 elapsed,
                 result.status.value,
+                result.raw_status,
                 result.estimated_delivery,
                 len(result.events),
             )
