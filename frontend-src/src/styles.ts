@@ -183,6 +183,11 @@ export const cardStyles = css`
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    cursor: pointer;
+  }
+
+  .tracking-number.copied {
+    color: #4caf50;
   }
 
   .eta {
@@ -200,5 +205,13 @@ export const cardStyles = css`
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .package-row-updated {
+    font-size: 0.75em;
+    color: var(--secondary-text-color);
+    opacity: 0.7;
+    text-align: right;
+    margin-top: 2px;
   }
 `;

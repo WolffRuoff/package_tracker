@@ -96,4 +96,12 @@ def mock_scraper_api():
     # Default: remove package succeeds
     mock_client.async_remove_package.return_value = None
 
+    # Default: carriers list
+    mock_client.async_get_carriers.return_value = [
+        {"id": "usps", "name": "USPS"},
+        {"id": "ups", "name": "UPS"},
+        {"id": "fedex", "name": "FedEx"},
+        {"id": "speedx", "name": "SpeedX"},
+    ]
+
     return mock_client

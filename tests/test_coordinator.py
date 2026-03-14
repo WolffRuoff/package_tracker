@@ -45,6 +45,7 @@ def _make_coordinator(mock_hass, packages, auto_remove_days=1, mock_client=None)
         coord.logger = MagicMock()
         coord.name = "package_tracker"
         coord.update_interval = None
+        coord.supported_carriers = []
     return coord
 
 
@@ -65,6 +66,7 @@ def coordinator(mock_hass, mock_config_entry, mock_scraper_api):
         coord.logger = MagicMock()
         coord.name = "package_tracker"
         coord.update_interval = None
+        coord.supported_carriers = []
         return coord
 
 

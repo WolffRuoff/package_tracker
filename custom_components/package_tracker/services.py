@@ -7,7 +7,7 @@ from functools import partial
 
 import voluptuous as vol
 
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
@@ -86,6 +86,12 @@ async def handle_add_package(hass: HomeAssistant, call: ServiceCall) -> None:
     )
 
 
+async def handle_get_carriers(hass: HomeAssistant, call: ServiceCall) -> dict:
+    """Return the list of carriers supported by the scraper."""
+    coord = _get_coordinator(hass)
+    return {"carriers": coord.supported_carriers}
+
+
 async def handle_refresh_packages(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle the refresh_packages service call."""
     coord = _get_coordinator(hass)
@@ -128,8 +134,17 @@ def register_services(hass: HomeAssistant) -> None:
             partial(handle_refresh_packages, hass),
         )
 
+    if not hass.services.has_service(DOMAIN, "get_carriers"):
+        hass.services.async_register(
+            DOMAIN,
+            "get_carriers",
+            partial(handle_get_carriers, hass),
+            supports_response=SupportsResponse.ONLY,
+        )
+
 
 def unregister_services(hass: HomeAssistant) -> None:
     """Remove package tracker services."""
     hass.services.async_remove(DOMAIN, "add_package")
     hass.services.async_remove(DOMAIN, "refresh_packages")
+    hass.services.async_remove(DOMAIN, "get_carriers")

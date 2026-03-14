@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from camoufox.async_api import AsyncCamoufox
 from fastapi import FastAPI, HTTPException
 
-from .carriers import get_provider
+from .carriers import CARRIER_PROVIDERS, get_provider
 from .const import DB_PATH, DEFAULT_PORT, Carrier
 from .models import (
     AddPackageRequest,
@@ -132,6 +132,15 @@ async def refresh_package(tracking_number: str):
     if pkg is None:
         raise HTTPException(status_code=404, detail="Package not found")
     return _build_package_response(pkg)
+
+
+@app.get("/api/carriers")
+async def get_carriers() -> list[dict]:
+    """Return the list of carriers supported by the scraper."""
+    return [
+        {"id": carrier.value, "name": provider_class().name}
+        for carrier, provider_class in CARRIER_PROVIDERS.items()
+    ]
 
 
 @app.get("/api/health", response_model=HealthResponse)

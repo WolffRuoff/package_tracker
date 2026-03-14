@@ -28,6 +28,10 @@ class ScraperApiClient:
         """Fetch all packages with tracking results."""
         return await self._get("/api/packages")
 
+    async def async_get_carriers(self) -> list[dict]:
+        """Fetch the list of supported carriers from the scraper."""
+        return await self._get("/api/carriers")
+
     async def async_add_package(
         self, tracking_number: str, carrier: str, label: str
     ) -> dict:

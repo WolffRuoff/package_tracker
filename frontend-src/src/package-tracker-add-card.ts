@@ -12,6 +12,8 @@ export class PackageTrackerAddCard extends LitElement {
   @state() private _loading = false;
   @state() private _error = "";
   @state() private _success = false;
+  @state() private _carriers: Array<{id: string; name: string}> | null = null;
+  private _carriersLoaded = false;
 
   static styles = css`
     ha-card {
@@ -87,6 +89,27 @@ export class PackageTrackerAddCard extends LitElement {
       background: rgba(76, 175, 80, 0.1);
       color: #4caf50;
     }
+
+    .loading-bar {
+      height: 3px;
+      width: 100%;
+      border-radius: 2px;
+      overflow: hidden;
+      background: rgba(var(--rgb-primary-color, 33, 150, 243), 0.2);
+    }
+
+    .loading-bar-inner {
+      height: 100%;
+      width: 40%;
+      border-radius: 2px;
+      background: var(--primary-color);
+      animation: loading-pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes loading-pulse {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
   `;
 
   public setConfig(config: { type: string; title?: string }): void {
@@ -105,6 +128,16 @@ export class PackageTrackerAddCard extends LitElement {
     return document.createElement("package-tracker-add-card-editor");
   }
 
+  updated(changedProps: Map<string, unknown>) {
+    if (changedProps.has("hass") && this.hass && !this._carriersLoaded) {
+      this._carriersLoaded = true;
+      (this.hass as any)
+        .callService("package_tracker", "get_carriers", {}, undefined, false, true)
+        .then((result: any) => { this._carriers = result.response?.carriers ?? []; })
+        .catch(() => { this._carriers = []; });
+    }
+  }
+
   protected render(): TemplateResult | typeof nothing {
     if (!this.hass || !this._config) return nothing;
 
@@ -119,6 +152,10 @@ export class PackageTrackerAddCard extends LitElement {
             ? html`<div class="message success">Package added successfully!</div>`
             : nothing}
 
+          ${this._loading
+            ? html`<div class="loading-bar"><div class="loading-bar-inner"></div></div>`
+            : nothing}
+
           <div>
             <label>Label</label>
             <input
@@ -127,6 +164,7 @@ export class PackageTrackerAddCard extends LitElement {
               placeholder="e.g. Amazon Order"
               @input="${(e: InputEvent) =>
                 (this._label = (e.target as HTMLInputElement).value)}"
+              @keydown="${(e: KeyboardEvent) => e.key === 'Enter' && this._submit()}"
             />
           </div>
 
@@ -138,20 +176,20 @@ export class PackageTrackerAddCard extends LitElement {
               placeholder="Carrier auto-detected"
               @input="${(e: InputEvent) =>
                 (this._trackingNumber = (e.target as HTMLInputElement).value)}"
+              @keydown="${(e: KeyboardEvent) => e.key === 'Enter' && this._submit()}"
             />
           </div>
 
           <div>
             <label>Carrier (optional)</label>
             <select
+              ?disabled="${this._carriers === null}"
               .value="${this._carrier}"
               @change="${(e: Event) =>
                 (this._carrier = (e.target as HTMLSelectElement).value)}"
             >
               <option value="">Auto-detect</option>
-              <option value="usps">USPS</option>
-              <option value="ups">UPS</option>
-              <option value="fedex">FedEx</option>
+              ${(this._carriers ?? []).map(c => html`<option value="${c.id}">${c.name}</option>`)}
             </select>
           </div>
 
@@ -180,6 +218,7 @@ export class PackageTrackerAddCard extends LitElement {
         ...(this._carrier ? { carrier: this._carrier } : {}),
       });
       this._success = true;
+      setTimeout(() => { this._success = false; }, 3000);
       this._label = "";
       this._trackingNumber = "";
       this._carrier = "";
