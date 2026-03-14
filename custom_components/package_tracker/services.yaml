@@ -18,7 +18,7 @@ add_package:
         text:
     carrier:
       name: Carrier
-      description: "Shipping carrier. Leave blank to auto-detect. Valid: usps, ups, fedex."
+      description: "Shipping carrier. Leave blank to auto-detect. Valid: usps, ups, fedex, speedx."
       required: false
       example: "usps"
       selector:
@@ -32,8 +32,16 @@ add_package:
               value: ups
             - label: FedEx
               value: fedex
+            - label: SpeedX
+              value: speedx
 
 refresh_packages:
   name: Refresh Packages
   description: Force a re-scrape of all tracked packages from their carrier websites.
   fields: {}
+
+get_carriers:
+  name: Get Supported Carriers
+  description: Returns the list of carriers supported by the scraper.
+  response:
+    optional: false

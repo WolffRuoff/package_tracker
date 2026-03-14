@@ -82,6 +82,7 @@ class PackageTrackerCoordinator(DataUpdateCoordinator[dict[str, TrackingResult]]
         self._scraper_url = scraper_url
         self._session: aiohttp.ClientSession | None = None
         self._client: ScraperApiClient | None = None
+        self.supported_carriers: list[dict] = []
 
     @staticmethod
     def _jittered_interval() -> timedelta:
@@ -108,6 +109,12 @@ class PackageTrackerCoordinator(DataUpdateCoordinator[dict[str, TrackingResult]]
         previous = self.data or {}
 
         client = self._ensure_client()
+
+        if not self.supported_carriers:
+            try:
+                self.supported_carriers = await client.async_get_carriers()
+            except Exception:  # noqa: BLE001
+                pass  # non-fatal — get_carriers service returns empty list until next poll
 
         try:
             packages_data = await client.async_get_packages()

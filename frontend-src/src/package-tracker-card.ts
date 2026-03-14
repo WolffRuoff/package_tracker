@@ -45,6 +45,7 @@ export class PackageTrackerCard extends LitElement {
   @property({ attribute: false }) public hass: any;
   @state() private _config?: PackageTrackerCardConfig;
   @state() private _refreshing = false;
+  @state() private _copiedId: string | null = null;
 
   static styles = cardStyles;
 
@@ -100,6 +101,12 @@ export class PackageTrackerCard extends LitElement {
           : html`<div class="package-list">${packages.map((pkg) => this._renderPackage(pkg))}</div>`}
       </ha-card>
     `;
+  }
+
+  private async _copyTrackingNumber(pkg: PackageData): Promise<void> {
+    await navigator.clipboard.writeText(pkg.attributes.tracking_number ?? "");
+    this._copiedId = pkg.entityId;
+    setTimeout(() => { this._copiedId = null; }, 2000);
   }
 
   private async _handleRefresh(): Promise<void> {
@@ -183,6 +190,20 @@ export class PackageTrackerCard extends LitElement {
 
     const latestEvent = attrs.events?.[0]?.description || "";
 
+    let lastUpdatedStr = "";
+    if (attrs.last_updated) {
+      try {
+        lastUpdatedStr = new Date(attrs.last_updated).toLocaleString(undefined, {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+      } catch {
+        // ignore
+      }
+    }
+
     return html`
       <div class="package-row" style="border-left-color: ${color}">
         <div class="package-row-primary">
@@ -210,13 +231,18 @@ export class PackageTrackerCard extends LitElement {
         <div class="package-row-secondary">
           <div class="secondary-left">
             <span class="carrier-badge">${attrs.carrier || ""}</span>
-            <span class="tracking-number">${attrs.tracking_number || ""}</span>
+            <span
+              class="tracking-number ${this._copiedId === pkg.entityId ? "copied" : ""}"
+              title="Click to copy"
+              @click="${() => this._copyTrackingNumber(pkg)}"
+            >${this._copiedId === pkg.entityId ? "Copied!" : attrs.tracking_number || ""}</span>
           </div>
           ${etaStr
             ? html`<span class="eta">${status === "delivered" ? etaStr : `ETA: ${etaStr}`}</span>`
             : nothing}
         </div>
         ${latestEvent ? html`<div class="package-row-event">${latestEvent}</div>` : nothing}
+        ${lastUpdatedStr ? html`<div class="package-row-updated">Updated: ${lastUpdatedStr}</div>` : nothing}
       </div>
     `;
   }
@@ -227,5 +253,5 @@ export class PackageTrackerCard extends LitElement {
 (window as any).customCards.push({
   type: "package-tracker-card",
   name: "Package Tracker Card",
-  description: "Track your shipping packages from USPS, UPS, and FedEx",
+  description: "Track your shipping packages from USPS, UPS, FedEx, and SpeedX",
 });

@@ -12,7 +12,7 @@ A HACS custom integration that tracks shipping packages from USPS, UPS, FedEx, a
 - Built-in Lovelace card with status icons and color coding
 - Add/remove packages via the UI options flow or the `add_package` service
 - Add Package Lovelace card — form card for adding packages directly from the dashboard
-- Modular carrier system — easy to extend with new carriers
+- Modular carrier system — easy to extend with new carriers; the frontend dropdown and Dev Tools service definition stay in sync automatically via the scraper
 
 ## Installation
 
@@ -107,7 +107,7 @@ Fields: `tracking_number` (required), `label` (required), `carrier` (optional �
 
 ### Via the Add Package card
 
-Add `custom:package-tracker-add-card` to any dashboard for a form-based UI (see [Lovelace Cards](#lovelace-cards)).
+Add `custom:package-tracker-add-card` to any dashboard for a form-based UI (see [Lovelace Cards](#lovelace-cards)). The carrier dropdown is populated dynamically from the scraper, so it always reflects the carriers it supports.
 
 ## Lovelace Cards
 
