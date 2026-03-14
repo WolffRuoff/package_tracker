@@ -43,5 +43,4 @@ refresh_packages:
 get_carriers:
   name: Get Supported Carriers
   description: Returns the list of carriers supported by the scraper.
-  response:
-    optional: false
+  fields: {}
