@@ -28,6 +28,7 @@ STATUS_MAPPING: dict[str, TrackingStatus] = {
     "out for delivery": TrackingStatus.OUT_FOR_DELIVERY,
     "on fedex vehicle for delivery": TrackingStatus.OUT_FOR_DELIVERY,
     "in transit": TrackingStatus.IN_TRANSIT,
+    "on the way": TrackingStatus.IN_TRANSIT,
     "at local fedex facility": TrackingStatus.IN_TRANSIT,
     "departed fedex location": TrackingStatus.IN_TRANSIT,
     "arrived at fedex location": TrackingStatus.IN_TRANSIT,
