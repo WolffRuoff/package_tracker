@@ -180,6 +180,7 @@ export class PackageTrackerCard extends LitElement {
       try {
         const date = new Date(attrs.estimated_delivery);
         etaStr = date.toLocaleDateString(undefined, {
+          weekday: "short",
           month: "short",
           day: "numeric",
         });
