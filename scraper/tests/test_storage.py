@@ -141,3 +141,42 @@ class TestSaveTrackingResult:
         )
         result = await in_memory_store.get_tracking_result("TRACK1")
         assert result["status"] == "delivered"
+
+
+class TestSaveResult:
+    @pytest.mark.asyncio
+    async def test_save_result_serializes_and_persists(self, in_memory_store):
+        from datetime import datetime, timezone
+
+        from scraper.carriers.base import TrackingEvent, TrackingResult
+        from scraper.const import Carrier
+
+        await in_memory_store.add_package("TRACK1", "usps", "Pkg1")
+        result = TrackingResult(
+            carrier=Carrier.USPS,
+            tracking_number="TRACK1",
+            status=TrackingStatus.IN_TRANSIT,
+            raw_status="On the Way",
+            estimated_delivery=datetime(2026, 7, 13),
+            last_updated=datetime(2026, 7, 8, 9, 49, tzinfo=timezone.utc),
+            events=[
+                TrackingEvent(
+                    timestamp=datetime(2026, 7, 8, 9, 49, tzinfo=timezone.utc),
+                    location="ANAHEIM, CA",
+                    description="Arrived at USPS Facility",
+                    status=TrackingStatus.IN_TRANSIT,
+                )
+            ],
+        )
+        await in_memory_store.save_result(result)
+
+        row = await in_memory_store.get_tracking_result("TRACK1")
+        assert row["status"] == "in_transit"
+        assert row["raw_status"] == "On the Way"
+        # UTC-aware instant is serialized with its offset; naive ETA without one.
+        assert row["last_updated"] == "2026-07-08T09:49:00+00:00"
+        assert row["estimated_delivery"] == "2026-07-13T00:00:00"
+        events = json.loads(row["events_json"])
+        assert len(events) == 1
+        assert events[0]["description"] == "Arrived at USPS Facility"
+        assert events[0]["status"] == "in_transit"

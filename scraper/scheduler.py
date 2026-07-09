@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import random
 from datetime import datetime
@@ -12,7 +11,6 @@ from camoufox.async_api import AsyncCamoufox
 from playwright.async_api import Browser
 
 from .carriers import get_provider
-from .carriers.base import TrackingResult
 from .const import DEFAULT_SCAN_INTERVAL, SCAN_INTERVAL_JITTER, Carrier
 from .storage import PackageStore
 
@@ -125,37 +123,9 @@ class Scheduler:
                 result.estimated_delivery,
                 len(result.events),
             )
-            await self._save_result(result)
+            await self._store.save_result(result)
         except Exception:
             elapsed = (datetime.now() - t0).total_seconds()
             _LOGGER.exception(
                 "Error scraping %s for %s after %.1fs", carrier, tracking_number, elapsed
             )
-
-    async def _save_result(self, result: TrackingResult) -> None:
-        """Persist a tracking result to the database."""
-        events_json = json.dumps(
-            [
-                {
-                    "timestamp": e.timestamp.isoformat(),
-                    "location": e.location,
-                    "description": e.description,
-                    "status": e.status.value,
-                }
-                for e in result.events
-            ]
-        )
-        await self._store.save_tracking_result(
-            tracking_number=result.tracking_number,
-            status=result.status.value,
-            raw_status=result.raw_status,
-            estimated_delivery=(
-                result.estimated_delivery.isoformat()
-                if result.estimated_delivery
-                else None
-            ),
-            last_updated=(
-                result.last_updated.isoformat() if result.last_updated else None
-            ),
-            events_json=events_json,
-        )

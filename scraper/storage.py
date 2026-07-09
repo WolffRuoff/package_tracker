@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
+from .carriers.base import TrackingResult
 from .const import Carrier, TrackingStatus
+from .util import to_iso
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -139,6 +141,28 @@ class PackageStore:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+    async def save_result(self, result: TrackingResult) -> None:
+        """Serialize and persist a TrackingResult (domain-level upsert)."""
+        events_json = json.dumps(
+            [
+                {
+                    "timestamp": e.timestamp.isoformat(),
+                    "location": e.location,
+                    "description": e.description,
+                    "status": e.status.value,
+                }
+                for e in result.events
+            ]
+        )
+        await self.save_tracking_result(
+            tracking_number=result.tracking_number,
+            status=result.status.value,
+            raw_status=result.raw_status,
+            estimated_delivery=to_iso(result.estimated_delivery),
+            last_updated=to_iso(result.last_updated),
+            events_json=events_json,
+        )
+
     async def save_tracking_result(
         self,
         tracking_number: str,
@@ -148,7 +172,7 @@ class PackageStore:
         last_updated: str | None,
         events_json: str,
     ) -> None:
-        """Save or update a tracking result."""
+        """Save or update a tracking result (low-level column write)."""
         assert self._db is not None
         await self._db.execute(
             """
