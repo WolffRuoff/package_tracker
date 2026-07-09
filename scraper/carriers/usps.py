@@ -18,13 +18,26 @@ USPS_TRACKING_PAGE = (
     "https://tools.usps.com/go/TrackConfirmAction?tLabels={tracking_number}"
 )
 
-WAIT_SELECTOR = ".track-statusbar"
+# USPS serves multiple page layouts (varies by IP/geo/AB-test):
+#   v1 — legacy widget: ``.track-statusbar`` / ``.current-tracking-status-wrapper``
+#   v2 — progress-bar page: ``.tracking-progress-bar-status-container``
+# Across the v1->v2 redesign the *wrapper* classes changed but the *leaf* classes
+# (.tb-step / .tb-status / .expected_delivery) did not, so we wait on the leaves
+# (plus the known wrappers) — this survives future wrapper renames.
+WAIT_SELECTOR = (
+    ".tb-step, .tb-status, .expected_delivery, "
+    ".track-statusbar, .tracking-progress-bar-status-container"
+)
 
 STATUS_MAPPING: dict[str, TrackingStatus] = {
     "delivered": TrackingStatus.DELIVERED,
     "out for delivery": TrackingStatus.OUT_FOR_DELIVERY,
     "in transit": TrackingStatus.IN_TRANSIT,
     "moving through network": TrackingStatus.IN_TRANSIT,
+    "on the way": TrackingStatus.IN_TRANSIT,
+    "arrived": TrackingStatus.IN_TRANSIT,
+    "departed": TrackingStatus.IN_TRANSIT,
+    "preparing for delivery": TrackingStatus.IN_TRANSIT,
     "accepted": TrackingStatus.PRE_TRANSIT,
     "pre-shipment": TrackingStatus.PRE_TRANSIT,
     "shipping label created": TrackingStatus.PRE_TRANSIT,
@@ -73,14 +86,10 @@ class USPSProvider(CarrierProvider):
         return result
 
     def _parse_tracking_page(self, html: str, result: TrackingResult) -> None:
-        """Parse the USPS tracking page HTML."""
+        """Parse the USPS tracking page HTML (handles both page layouts)."""
         soup = BeautifulSoup(html, "html.parser")
 
-        status_banner = soup.select_one(".current-tracking-status-wrapper .tb-status")
-        if status_banner:
-            raw_status = status_banner.get_text(strip=True)
-            result.raw_status = raw_status
-            result.status = self._map_status(raw_status)
+        self._parse_status(soup, result)
 
         eta_snip = soup.select_one(".expected_delivery .eta_snip")
         if eta_snip:
@@ -89,14 +98,54 @@ class USPSProvider(CarrierProvider):
             eta_text = eta_snip.get_text(" ", strip=True)
             result.estimated_delivery = self._parse_date(eta_text)
 
-        history_rows = soup.select(
-            ".track-bar-container .tb-step, "
-            "#trackingHistory_list .tb-step"
-        )
+        # Event rows are ".tb-step" in every known layout. Match them directly
+        # rather than scoping to a wrapper container (the wrappers are what
+        # change between versions); dedup in case a page repeats a step.
+        history_rows = soup.select(".tb-step")
+        seen: set[tuple[str, str, str]] = set()
         for row in history_rows:
             event = self._parse_event_row(row)
-            if event:
-                result.events.append(event)
+            if not event:
+                continue
+            key = (event.description, event.location, str(event.timestamp))
+            if key in seen:
+                continue
+            seen.add(key)
+            result.events.append(event)
+
+    def _parse_status(self, soup, result: TrackingResult) -> None:
+        """Populate result.status / raw_status from whichever layout is present.
+
+        Primary signal is the human-readable status text carried by the stable
+        leaf classes (``.tb-status`` / ``.tb-status-detail``), which survived the
+        v1->v2 rename. The v2 container's ``<state>-status`` modifier class is
+        only a fallback for status text we don't recognise.
+        """
+        banner = (
+            # v1: explicit status banner.
+            soup.select_one(".current-tracking-status-wrapper .tb-status")
+            # v2: the current step's short status, then its detail.
+            or soup.select_one(".tb-step.current-step .tb-status")
+            or soup.select_one(".tb-step.current-step .tb-status-detail")
+        )
+        if banner:
+            raw_status = banner.get_text(strip=True)
+            result.raw_status = raw_status
+            result.status = self._map_status(raw_status)
+
+        # Fallback: derive status from the container modifier class (e.g.
+        # "in-transit-status") when the text didn't classify.
+        if result.status == TrackingStatus.UNKNOWN:
+            container = soup.select_one(".tracking-progress-bar-status-container")
+            if container:
+                for cls in container.get("class", []):
+                    if cls.endswith("-status"):
+                        mapped = self._map_status(
+                            cls[: -len("-status")].replace("-", " ")
+                        )
+                        if mapped != TrackingStatus.UNKNOWN:
+                            result.status = mapped
+                            break
 
     def _map_status(self, raw_status: str) -> TrackingStatus:
         """Map a raw status string to TrackingStatus."""
@@ -108,11 +157,18 @@ class USPSProvider(CarrierProvider):
 
     def _parse_date(self, text: str) -> datetime | None:
         """Try to parse a date from text like 'January 15, 2025' or 'Friday, March 7'."""
-        cleaned = re.sub(r"(Expected Delivery\s*(by)?|by|on)\s*:?\s*", "", text).strip()
+        # Word boundaries keep "on" from matching inside e.g. "Monday".
+        cleaned = re.sub(
+            r"\b(Expected Delivery\s*(?:by)?|by|on)\b\s*:?\s*", "", text
+        ).strip()
         cleaned = re.sub(
             r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*",
             "",
             cleaned,
+        ).strip()
+        # New USPS event dates carry a clock time, e.g. "July 8, 2026 9:49 AM".
+        cleaned = re.sub(
+            r"\s+\d{1,2}:\d{2}\s*(?:[AaPp][Mm])?$", "", cleaned
         ).strip()
 
         for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y", "%d %B %Y", "%d %b %Y"):
@@ -132,7 +188,10 @@ class USPSProvider(CarrierProvider):
 
     def _parse_event_row(self, row) -> TrackingEvent | None:
         """Parse a single tracking event row from the history."""
-        desc_el = row.select_one(".tb-status-detail, .tb-status")
+        # Prefer the detailed description; the short ".tb-status" (e.g. "On the
+        # Way") is only a fallback. A plain comma selector would return whichever
+        # comes first in the DOM, which is the short one on the new layout.
+        desc_el = row.select_one(".tb-status-detail") or row.select_one(".tb-status")
         date_el = row.select_one(".tb-date, .tb-date-time")
         loc_el = row.select_one(".tb-location")
 

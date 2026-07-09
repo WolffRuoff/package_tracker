@@ -88,6 +88,61 @@ class TestParseTrackingPage:
         assert result.events == []
 
 
+class TestParseV2ProgressBarLayout:
+    """Tests for the v2 USPS progress-bar page layout (no .track-statusbar)."""
+
+    def test_in_transit_status_from_container_class(
+        self, provider, usps_v2_in_transit_html
+    ):
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_v2_in_transit_html, result)
+        assert result.status == TrackingStatus.IN_TRANSIT
+        assert result.raw_status == "On the Way"
+
+    def test_in_transit_events(self, provider, usps_v2_in_transit_html):
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_v2_in_transit_html, result)
+        # Two real steps; the greyed-out "upcoming-step" placeholders are excluded.
+        assert len(result.events) == 2
+        assert result.events[0].description == "Arrived at USPS Facility"
+        assert "ANAHEIM" in result.events[0].location
+
+    def test_in_transit_event_date_with_time(
+        self, provider, usps_v2_in_transit_html
+    ):
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_v2_in_transit_html, result)
+        # "July 8, 2026 9:49 AM" -> the clock time is stripped before parsing.
+        assert result.events[0].timestamp.month == 7
+        assert result.events[0].timestamp.day == 8
+        assert result.events[0].timestamp.year == 2026
+
+    def test_in_transit_estimated_delivery_monday(
+        self, provider, usps_v2_in_transit_html
+    ):
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_v2_in_transit_html, result)
+        # Regression: "Monday" must not have its "on" stripped by the date cleaner.
+        assert result.estimated_delivery is not None
+        assert result.estimated_delivery.month == 7
+        assert result.estimated_delivery.day == 13
+        assert result.estimated_delivery.year == 2026
+
+    def test_delivered_status_from_container_class(
+        self, provider, usps_v2_delivered_html
+    ):
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_v2_delivered_html, result)
+        assert result.status == TrackingStatus.DELIVERED
+        assert result.raw_status == "Delivered"
+
+    def test_delivered_events(self, provider, usps_v2_delivered_html):
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_v2_delivered_html, result)
+        assert len(result.events) == 3
+        assert result.events[0].description == "Delivered, In/At Mailbox"
+
+
 class TestAsyncTrack:
     """Tests for async_track with mocked browser."""
 
@@ -176,6 +231,20 @@ class TestParseDate:
             result,
         )
         assert result.status == TrackingStatus.IN_TRANSIT
+
+    def test_date_with_trailing_time(self, provider):
+        result = provider._parse_date("July 8, 2026 9:49 AM")
+        assert result is not None
+        assert result.month == 7
+        assert result.day == 8
+        assert result.year == 2026
+
+    def test_monday_not_corrupted_by_on_stripping(self, provider):
+        result = provider._parse_date("Monday 13 July 2026")
+        assert result is not None
+        assert result.month == 7
+        assert result.day == 13
+        assert result.year == 2026
 
     def test_invalid_returns_none(self, provider):
         assert provider._parse_date("not a date at all") is None
