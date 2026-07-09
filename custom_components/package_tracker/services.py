@@ -13,7 +13,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .api_client import ScraperApiError
 from .carriers import detect_carrier
-from .const import CONF_PACKAGES, DOMAIN
+from .const import CONF_PACKAGES, DOMAIN, TrackingStatus
 from .coordinator import PackageTrackerCoordinator, parse_package_dict
 
 _LOGGER = logging.getLogger(__name__)
@@ -98,12 +98,15 @@ async def handle_refresh_packages(hass: HomeAssistant, call: ServiceCall) -> Non
 
     client = coord._ensure_client()
     current_data = dict(coord.data or {})
-    tracking_numbers = list(current_data.keys())
 
-    if not tracking_numbers:
+    if not current_data:
         return
 
-    for tn in tracking_numbers:
+    for tn, cached in list(current_data.items()):
+        # Delivered is terminal — skip the expensive re-scrape and keep the
+        # cached result.
+        if cached is not None and cached.status == TrackingStatus.DELIVERED:
+            continue
         try:
             pkg_data = await client.async_refresh_package(tn)
             result = parse_package_dict(pkg_data)
