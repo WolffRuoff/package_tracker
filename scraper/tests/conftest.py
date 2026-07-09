@@ -32,6 +32,16 @@ def usps_not_found_html():
 
 
 @pytest.fixture
+def usps_v2_in_transit_html():
+    return (FIXTURES_DIR / "usps" / "v2_in_transit.html").read_text()
+
+
+@pytest.fixture
+def usps_v2_delivered_html():
+    return (FIXTURES_DIR / "usps" / "v2_delivered.html").read_text()
+
+
+@pytest.fixture
 def ups_delivered_html():
     return (FIXTURES_DIR / "ups" / "delivered.html").read_text()
 
