@@ -238,6 +238,37 @@ async def test_refresh_continues_on_partial_failure(mock_hass, mock_coordinator)
 
 
 @pytest.mark.asyncio
+async def test_refresh_skips_delivered_packages(mock_hass, mock_coordinator):
+    from package_tracker.const import TrackingStatus
+
+    delivered = MagicMock()
+    delivered.status = TrackingStatus.DELIVERED
+    in_transit = MagicMock()
+    in_transit.status = TrackingStatus.IN_TRANSIT
+
+    mock_client = AsyncMock()
+    mock_client.async_refresh_package.return_value = {
+        "tracking_number": "1Z111",
+        "carrier": "ups",
+        "status": "in_transit",
+        "raw_status": "In Transit",
+        "estimated_delivery": None,
+        "last_updated": None,
+        "events": [],
+        "tracking_url": "https://ups.com/track?tracknum=1Z111",
+    }
+    mock_coordinator._ensure_client = MagicMock(return_value=mock_client)
+    mock_coordinator.data = {"1Z111": in_transit, "9400222": delivered}
+
+    await handle_refresh_packages(mock_hass, _make_call())
+
+    # Only the in-transit package is re-scraped; delivered is left untouched.
+    mock_client.async_refresh_package.assert_called_once_with("1Z111")
+    updated_data = mock_coordinator.async_set_updated_data.call_args[0][0]
+    assert updated_data["9400222"] is delivered
+
+
+@pytest.mark.asyncio
 async def test_refresh_no_packages(mock_hass, mock_coordinator):
     mock_client = AsyncMock()
     mock_coordinator._ensure_client = MagicMock(return_value=mock_client)
