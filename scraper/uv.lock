@@ -1021,6 +1021,7 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "camoufox", extra = ["geoip"] },
     { name = "fastapi" },
+    { name = "playwright" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1036,8 +1037,9 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
-    { name = "camoufox", extras = ["geoip"], specifier = ">=0.4" },
+    { name = "camoufox", extras = ["geoip"], specifier = "==0.4.11" },
     { name = "fastapi", specifier = ">=0.110" },
+    { name = "playwright", specifier = "==1.58.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
 ]
 
