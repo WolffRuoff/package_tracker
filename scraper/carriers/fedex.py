@@ -10,7 +10,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from playwright.async_api import Browser
 
-from ..const import Carrier, TrackingStatus
+from ..const import Carrier
 from ..util import utcnow
 from .base import CarrierProvider, TrackingEvent, TrackingResult
 
@@ -23,23 +23,6 @@ WAIT_SELECTOR = (
     ".tracking-result, "
     ".alert__heading"
 )
-
-STATUS_MAPPING: dict[str, TrackingStatus] = {
-    "delivered": TrackingStatus.DELIVERED,
-    "out for delivery": TrackingStatus.OUT_FOR_DELIVERY,
-    "on fedex vehicle for delivery": TrackingStatus.OUT_FOR_DELIVERY,
-    "in transit": TrackingStatus.IN_TRANSIT,
-    "on the way": TrackingStatus.IN_TRANSIT,
-    "at local fedex facility": TrackingStatus.IN_TRANSIT,
-    "departed fedex location": TrackingStatus.IN_TRANSIT,
-    "arrived at fedex location": TrackingStatus.IN_TRANSIT,
-    "at destination sort facility": TrackingStatus.IN_TRANSIT,
-    "picked up": TrackingStatus.PRE_TRANSIT,
-    "shipment information sent to fedex": TrackingStatus.PRE_TRANSIT,
-    "label created": TrackingStatus.PRE_TRANSIT,
-    "delivery exception": TrackingStatus.EXCEPTION,
-    "clearance delay": TrackingStatus.EXCEPTION,
-}
 
 
 class FedExProvider(CarrierProvider):
@@ -214,36 +197,6 @@ class FedExProvider(CarrierProvider):
                     status=status,
                 )
             )
-
-    def _map_status(self, raw_status: str) -> TrackingStatus:
-        """Map a raw status string to TrackingStatus."""
-        lower = raw_status.lower()
-        for key, status in STATUS_MAPPING.items():
-            if key in lower:
-                return status
-        return TrackingStatus.UNKNOWN
-
-    def _parse_date(self, text: str) -> datetime | None:
-        """Try to parse a date from FedEx date text."""
-        formats = [
-            "%B %d, %Y",
-            "%b %d, %Y",
-            "%m/%d/%Y",
-            "%A, %B %d, %Y",
-            "%A %m/%d/%Y",
-        ]
-        cleaned = re.sub(
-            r"(Estimated delivery|Scheduled delivery|by|on)\s*:?\s*",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        ).strip()
-        for fmt in formats:
-            try:
-                return datetime.strptime(cleaned, fmt)
-            except ValueError:
-                continue
-        return None
 
     def _parse_scan_row(self, row) -> TrackingEvent | None:
         """Parse a single scan event row from FedEx tracking history."""

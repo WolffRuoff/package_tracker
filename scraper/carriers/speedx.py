@@ -61,7 +61,7 @@ class SpeedXProvider(CarrierProvider):
 
         edd_text = self._extract_edd(soup)
         if edd_text:
-            result.estimated_delivery = self._parse_delivery_date(edd_text)
+            result.estimated_delivery = self._parse_date(edd_text)
 
         for ev in events_data:
             event = self._parse_event(ev)
@@ -109,15 +109,6 @@ class SpeedXProvider(CarrierProvider):
         if category == "PICKUP":
             return TrackingStatus.PRE_TRANSIT
         return TrackingStatus.UNKNOWN
-
-    def _parse_delivery_date(self, edd_text: str) -> datetime | None:
-        cleaned = re.sub(r'^(Delivered|Estimated Delivery Date):\s*', '', edd_text).strip()
-        for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y"):
-            try:
-                return datetime.strptime(cleaned, fmt)
-            except ValueError:
-                continue
-        return None
 
     def _parse_event(self, ev: dict) -> TrackingEvent | None:
         try:

@@ -10,6 +10,7 @@ from datetime import datetime
 from playwright.async_api import Browser
 
 from ..const import Carrier, TrackingStatus
+from ..util import parse_date
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,6 +83,40 @@ def _identify_bot_service(url: str, html: str, headers: dict[str, str]) -> str:
 _BOT_HEADER_KEYWORDS = ("bot", "akamai", "datadome", "kasada", "cf-", "x-dd", "server", "via", "x-cache")
 
 
+# Free-text status phrases shared by the HTML-scraping carriers (USPS/UPS/FedEx),
+# matched as case-insensitive substrings. Ordered specific-first. SpeedX does not
+# use this — it maps structured category codes and overrides _map_status.
+STATUS_MAPPING: dict[str, TrackingStatus] = {
+    "delivered": TrackingStatus.DELIVERED,
+    "on fedex vehicle for delivery": TrackingStatus.OUT_FOR_DELIVERY,
+    "out for delivery": TrackingStatus.OUT_FOR_DELIVERY,
+    "moving through network": TrackingStatus.IN_TRANSIT,
+    "on the way": TrackingStatus.IN_TRANSIT,
+    "preparing for delivery": TrackingStatus.IN_TRANSIT,
+    "at local fedex facility": TrackingStatus.IN_TRANSIT,
+    "at destination sort facility": TrackingStatus.IN_TRANSIT,
+    "in transit": TrackingStatus.IN_TRANSIT,
+    "arrived": TrackingStatus.IN_TRANSIT,
+    "departed": TrackingStatus.IN_TRANSIT,
+    "shipment information sent to fedex": TrackingStatus.PRE_TRANSIT,
+    "shipper created a label": TrackingStatus.PRE_TRANSIT,
+    "shipping label created": TrackingStatus.PRE_TRANSIT,
+    "label created": TrackingStatus.PRE_TRANSIT,
+    "order processed": TrackingStatus.PRE_TRANSIT,
+    "picked up": TrackingStatus.PRE_TRANSIT,
+    "pickup": TrackingStatus.PRE_TRANSIT,
+    "pre-shipment": TrackingStatus.PRE_TRANSIT,
+    "accepted": TrackingStatus.PRE_TRANSIT,
+    "delivery exception": TrackingStatus.EXCEPTION,
+    "delivery attempt": TrackingStatus.EXCEPTION,
+    "returned to sender": TrackingStatus.EXCEPTION,
+    "clearance delay": TrackingStatus.EXCEPTION,
+    "notice left": TrackingStatus.EXCEPTION,
+    "exception": TrackingStatus.EXCEPTION,
+    "alert": TrackingStatus.EXCEPTION,
+}
+
+
 class CarrierProvider(ABC):
     """Abstract base class for carrier providers."""
 
@@ -108,6 +143,18 @@ class CarrierProvider(ABC):
     @abstractmethod
     def validate_tracking_number(self, tracking_number: str) -> bool:
         """Return True if the tracking number matches this carrier's format."""
+
+    def _map_status(self, raw_status: str) -> TrackingStatus:
+        """Map a free-text status string to a TrackingStatus via substring match."""
+        lower = raw_status.lower()
+        for key, status in STATUS_MAPPING.items():
+            if key in lower:
+                return status
+        return TrackingStatus.UNKNOWN
+
+    def _parse_date(self, text: str) -> datetime | None:
+        """Parse a carrier date/time string into a naive datetime, or None."""
+        return parse_date(text)
 
     async def _get_page_content(
         self, browser: Browser, url: str, wait_selector: str

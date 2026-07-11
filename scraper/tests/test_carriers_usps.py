@@ -6,8 +6,8 @@ from datetime import timedelta, timezone
 
 import pytest
 
-from scraper.carriers.base import TrackingResult
-from scraper.carriers.usps import STATUS_MAPPING, USPSProvider
+from scraper.carriers.base import STATUS_MAPPING, TrackingResult
+from scraper.carriers.usps import USPSProvider
 from scraper.const import Carrier, TrackingStatus
 
 
