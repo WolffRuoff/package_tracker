@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 from playwright.async_api import Browser
 
 from ..const import Carrier, TrackingStatus
+from ..util import utcnow
 from .base import CarrierProvider, TrackingEvent, TrackingResult
 
 _LOGGER = logging.getLogger(__name__)
@@ -127,7 +128,7 @@ class FedExProvider(CarrierProvider):
                 html = await page.content()
                 self._parse_tracking_page(html, result)
 
-            result.last_updated = datetime.now()
+            result.last_updated = utcnow()
             return result
         finally:
             await context.close()
@@ -193,7 +194,7 @@ class FedExProvider(CarrierProvider):
             date_str = scan.get("date", "")  # "YYYY-MM-DD"
             time_str = scan.get("time", "")  # "HH:MM:SS"
 
-            timestamp = datetime.now()
+            timestamp = utcnow()
             if date_str:
                 combined = f"{date_str}T{time_str}" if time_str else date_str
                 try:
@@ -259,7 +260,7 @@ class FedExProvider(CarrierProvider):
         description = desc_el.get_text(strip=True) if desc_el else ""
         location = loc_el.get_text(strip=True) if loc_el else ""
 
-        timestamp = datetime.now()
+        timestamp = utcnow()
         if date_el:
             date_text = date_el.get_text(strip=True)
             parsed = self._parse_date(date_text)

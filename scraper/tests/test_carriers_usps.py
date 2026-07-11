@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta, timezone
+
 import pytest
 
 from scraper.carriers.base import TrackingResult
@@ -62,6 +64,14 @@ class TestParseTrackingPage:
         assert result.estimated_delivery is not None
         assert result.estimated_delivery.month == 1
         assert result.estimated_delivery.day == 15
+
+    def test_estimated_delivery_stays_naive(self, provider, usps_delivered_html):
+        result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
+        provider._parse_tracking_page(usps_delivered_html, result)
+        # ETA is a carrier calendar date with no real timezone; it must stay
+        # naive so it isn't shifted a day when localized for display.
+        assert result.estimated_delivery is not None
+        assert result.estimated_delivery.tzinfo is None
 
     def test_in_transit_status(self, provider, usps_in_transit_html):
         result = TrackingResult(carrier=Carrier.USPS, tracking_number="TEST")
@@ -158,6 +168,20 @@ class TestAsyncTrack:
         assert result.carrier == Carrier.USPS
         assert result.status == TrackingStatus.DELIVERED
         assert result.last_updated is not None
+
+    @pytest.mark.asyncio
+    async def test_last_updated_is_utc_aware(
+        self, provider, mock_browser, usps_delivered_html
+    ):
+        browser, mock_page = mock_browser
+        mock_page.content.return_value = usps_delivered_html
+
+        result = await provider.async_track("92001234567890123456", browser)
+
+        # last_updated is an instant we stamp — it must be timezone-aware UTC so
+        # the frontend renders "Updated:" in the viewer's local time.
+        assert result.last_updated.tzinfo is not None
+        assert result.last_updated.utcoffset() == timedelta(0)
 
     @pytest.mark.asyncio
     async def test_browser_error_raises(self, provider, mock_browser):

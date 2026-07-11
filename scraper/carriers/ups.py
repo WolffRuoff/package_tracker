@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from playwright.async_api import Browser
 
 from ..const import Carrier, TrackingStatus
+from ..util import utcnow
 from .base import CarrierProvider, TrackingEvent, TrackingResult
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ class UPSProvider(CarrierProvider):
         url = self.tracking_url(tracking_number)
         html = await self._get_page_content(browser, url, WAIT_SELECTOR)
         self._parse_tracking_page(html, result)
-        result.last_updated = datetime.now()
+        result.last_updated = utcnow()
         return result
 
     def _parse_tracking_page(self, html: str, result: TrackingResult) -> None:
@@ -149,7 +150,7 @@ class UPSProvider(CarrierProvider):
         description = desc_el.get_text(strip=True) if desc_el else ""
         location = loc_el.get_text(strip=True) if loc_el else ""
 
-        timestamp = datetime.now()
+        timestamp = utcnow()
         if date_el:
             date_text = date_el.get_text(strip=True)
             parsed = self._parse_date(date_text)
