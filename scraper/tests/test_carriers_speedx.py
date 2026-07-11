@@ -158,27 +158,27 @@ class TestMapStatus:
 
 class TestParseDeliveryDate:
     def test_delivered_prefix_stripped(self, provider):
-        result = provider._parse_delivery_date("Delivered: March 4, 2026")
+        result = provider._parse_date("Delivered: March 4, 2026")
         assert result is not None
         assert result.month == 3
         assert result.day == 4
         assert result.year == 2026
 
     def test_plain_date(self, provider):
-        result = provider._parse_delivery_date("March 4, 2026")
+        result = provider._parse_date("March 4, 2026")
         assert result is not None
         assert result.month == 3
         assert result.day == 4
 
     def test_estimated_delivery_date_prefix_stripped(self, provider):
-        result = provider._parse_delivery_date("Estimated Delivery Date: March 8, 2026")
+        result = provider._parse_date("Estimated Delivery Date: March 8, 2026")
         assert result is not None
         assert result.month == 3
         assert result.day == 8
         assert result.year == 2026
 
     def test_invalid_returns_none(self, provider):
-        assert provider._parse_delivery_date("not a date") is None
+        assert provider._parse_date("not a date") is None
 
 
 class TestAsyncTrack:

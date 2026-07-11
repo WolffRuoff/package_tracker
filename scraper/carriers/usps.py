@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
 
 from bs4 import BeautifulSoup
 from playwright.async_api import Browser
@@ -29,23 +28,6 @@ WAIT_SELECTOR = (
     ".tb-step, .tb-status, .expected_delivery, "
     ".track-statusbar, .tracking-progress-bar-status-container"
 )
-
-STATUS_MAPPING: dict[str, TrackingStatus] = {
-    "delivered": TrackingStatus.DELIVERED,
-    "out for delivery": TrackingStatus.OUT_FOR_DELIVERY,
-    "in transit": TrackingStatus.IN_TRANSIT,
-    "moving through network": TrackingStatus.IN_TRANSIT,
-    "on the way": TrackingStatus.IN_TRANSIT,
-    "arrived": TrackingStatus.IN_TRANSIT,
-    "departed": TrackingStatus.IN_TRANSIT,
-    "preparing for delivery": TrackingStatus.IN_TRANSIT,
-    "accepted": TrackingStatus.PRE_TRANSIT,
-    "pre-shipment": TrackingStatus.PRE_TRANSIT,
-    "shipping label created": TrackingStatus.PRE_TRANSIT,
-    "alert": TrackingStatus.EXCEPTION,
-    "notice left": TrackingStatus.EXCEPTION,
-    "delivery attempt": TrackingStatus.EXCEPTION,
-}
 
 
 class USPSProvider(CarrierProvider):
@@ -147,45 +129,6 @@ class USPSProvider(CarrierProvider):
                         if mapped != TrackingStatus.UNKNOWN:
                             result.status = mapped
                             break
-
-    def _map_status(self, raw_status: str) -> TrackingStatus:
-        """Map a raw status string to TrackingStatus."""
-        lower = raw_status.lower()
-        for key, status in STATUS_MAPPING.items():
-            if key in lower:
-                return status
-        return TrackingStatus.UNKNOWN
-
-    def _parse_date(self, text: str) -> datetime | None:
-        """Try to parse a date from text like 'January 15, 2025' or 'Friday, March 7'."""
-        # Word boundaries keep "on" from matching inside e.g. "Monday".
-        cleaned = re.sub(
-            r"\b(Expected Delivery\s*(?:by)?|by|on)\b\s*:?\s*", "", text
-        ).strip()
-        cleaned = re.sub(
-            r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*",
-            "",
-            cleaned,
-        ).strip()
-        # New USPS event dates carry a clock time, e.g. "July 8, 2026 9:49 AM".
-        cleaned = re.sub(
-            r"\s+\d{1,2}:\d{2}\s*(?:[AaPp][Mm])?$", "", cleaned
-        ).strip()
-
-        for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y", "%d %B %Y", "%d %b %Y"):
-            try:
-                return datetime.strptime(cleaned, fmt)
-            except ValueError:
-                continue
-
-        for fmt in ("%B %d", "%b %d"):
-            try:
-                parsed = datetime.strptime(cleaned, fmt)
-                return parsed.replace(year=utcnow().year)
-            except ValueError:
-                continue
-
-        return None
 
     def _parse_event_row(self, row) -> TrackingEvent | None:
         """Parse a single tracking event row from the history."""

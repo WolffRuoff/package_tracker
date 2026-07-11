@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from scraper.carriers.base import TrackingResult
-from scraper.carriers.fedex import STATUS_MAPPING, FedExProvider
+from scraper.carriers.base import STATUS_MAPPING, TrackingResult
+from scraper.carriers.fedex import FedExProvider
 from scraper.const import Carrier, TrackingStatus
 
 

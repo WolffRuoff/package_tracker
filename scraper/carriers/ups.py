@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
 
 from bs4 import BeautifulSoup
 from playwright.async_api import Browser
 
-from ..const import Carrier, TrackingStatus
+from ..const import Carrier
 from ..util import utcnow
 from .base import CarrierProvider, TrackingEvent, TrackingResult
 
@@ -21,22 +20,6 @@ UPS_TRACKING_PAGE = (
 )
 
 WAIT_SELECTOR = "#stApp .ups-track_details, #stApp .ups-alert, #stApp .track-no-info-content"
-
-STATUS_MAPPING: dict[str, TrackingStatus] = {
-    "delivered": TrackingStatus.DELIVERED,
-    "out for delivery": TrackingStatus.OUT_FOR_DELIVERY,
-    "on the way": TrackingStatus.IN_TRANSIT,
-    "in transit": TrackingStatus.IN_TRANSIT,
-    "departed": TrackingStatus.IN_TRANSIT,
-    "arrived": TrackingStatus.IN_TRANSIT,
-    "order processed": TrackingStatus.PRE_TRANSIT,
-    "label created": TrackingStatus.PRE_TRANSIT,
-    "pickup": TrackingStatus.PRE_TRANSIT,
-    "shipper created a label": TrackingStatus.PRE_TRANSIT,
-    "exception": TrackingStatus.EXCEPTION,
-    "returned to sender": TrackingStatus.EXCEPTION,
-    "delivery attempt": TrackingStatus.EXCEPTION,
-}
 
 
 class UPSProvider(CarrierProvider):
@@ -105,35 +88,6 @@ class UPSProvider(CarrierProvider):
             event = self._parse_activity_row(row)
             if event:
                 result.events.append(event)
-
-    def _map_status(self, raw_status: str) -> TrackingStatus:
-        """Map a raw status string to TrackingStatus."""
-        lower = raw_status.lower()
-        for key, status in STATUS_MAPPING.items():
-            if key in lower:
-                return status
-        return TrackingStatus.UNKNOWN
-
-    def _parse_date(self, text: str) -> datetime | None:
-        """Try to parse a date from UPS date text."""
-        formats = [
-            "%B %d, %Y",
-            "%b %d, %Y",
-            "%m/%d/%Y",
-            "%A, %B %d",
-            "%A, %m/%d/%Y",
-        ]
-        cleaned = re.sub(
-            r"(Estimated Delivery|Scheduled Delivery|by|on)\s*:?\s*",
-            "",
-            text,
-        ).strip()
-        for fmt in formats:
-            try:
-                return datetime.strptime(cleaned, fmt)
-            except ValueError:
-                continue
-        return None
 
     def _parse_activity_row(self, row) -> TrackingEvent | None:
         """Parse a single activity row from UPS tracking history."""

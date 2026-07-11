@@ -13,6 +13,8 @@ dependencies = [
     "playwright==1.58.0",
     "beautifulsoup4>=4.12",
     "aiosqlite>=0.20",
+    "python-dateutil>=2.9",
+    "pydantic-settings>=2.0",
 ]
 
 [dependency-groups]

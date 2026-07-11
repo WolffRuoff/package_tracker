@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from camoufox.async_api import AsyncCamoufox
 from fastapi import FastAPI, HTTPException
 
 from .carriers import CARRIER_PROVIDERS, get_provider
-from .const import DB_PATH, DEFAULT_PORT, Carrier
+from .config import settings
+from .const import Carrier
 from .models import (
     AddPackageRequest,
     HealthResponse,
@@ -27,7 +27,7 @@ from importlib.metadata import version as _pkg_version
 
 VERSION = _pkg_version("package-tracker-scraper")
 
-store = PackageStore(os.environ.get("DB_PATH", DB_PATH))
+store = PackageStore(settings.db_path)
 scheduler: Scheduler | None = None
 _camoufox: AsyncCamoufox | None = None
 _browser = None
@@ -153,9 +153,8 @@ def main():
     """Run the scraper server."""
     import uvicorn
 
-    port = int(os.environ.get("PORT", DEFAULT_PORT))
     logging.basicConfig(level=logging.INFO)
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=settings.port)
 
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from scraper.carriers.base import TrackingResult
-from scraper.carriers.ups import STATUS_MAPPING, UPSProvider
+from scraper.carriers.base import STATUS_MAPPING, TrackingResult
+from scraper.carriers.ups import UPSProvider
 from scraper.const import Carrier, TrackingStatus
 
 
