@@ -18,11 +18,17 @@ A HACS custom integration that tracks shipping packages from USPS, UPS, FedEx, a
 
 ### HACS (Recommended)
 
-1. Open HACS in Home Assistant
-2. Go to **Integrations** → **3-dot menu** → **Custom repositories**
-3. Add this repository URL with category **Integration**
-4. Install "Package Tracker"
+[![Open your Home Assistant instance and open this repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=WolffRuoff&repository=package_tracker&category=integration)
+
+Until this integration is in the HACS default store, add it as a custom repository:
+
+1. Open **HACS** in Home Assistant
+2. Click the **3-dot menu** (top right) → **Custom repositories**
+3. Add `https://github.com/WolffRuoff/package_tracker` with category **Integration**
+4. Search for and install **"Package Tracker"**
 5. Restart Home Assistant
+
+Or use the one-click button above.
 
 ### Manual
 
