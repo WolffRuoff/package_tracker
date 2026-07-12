@@ -52,11 +52,14 @@ def _identify_bot_service(url: str, html: str, headers: dict[str, str]) -> str:
     ):
         return "DataDome"
 
+    # Akamai is also just UPS/USPS's CDN, so generic "akamai" mentions show up
+    # on every request — only the challenge's own markers count as a block.
     if (
-        "akamai" in url_l
-        or any("akamai" in k for k in headers_l)
-        or "_akamai" in html_l
-        or "akam.net" in html_l
+        "_abck" in html_l
+        or "ak_bmsc" in html_l
+        or "bm-verify" in html_l
+        or "/_sec/verify" in html_l
+        or "akamaighost" in headers_l.get("server", "").lower()
     ):
         return "Akamai Bot Manager"
 
@@ -71,7 +74,7 @@ def _identify_bot_service(url: str, html: str, headers: dict[str, str]) -> str:
     ):
         return "Cloudflare"
 
-    if "imperva" in url_l or "incapsula" in html_l or "_Incapsula_Resource" in html_l:
+    if "imperva" in url_l or "incapsula" in html_l or "_incapsula_resource" in html_l:
         return "Imperva/Incapsula"
 
     if "perimeterx" in html_l or "_pxdk" in html_l:

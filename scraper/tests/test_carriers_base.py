@@ -32,18 +32,40 @@ class TestIdentifyBotService:
     def test_datadome_in_html(self):
         assert _identify_bot_service("https://example.com", "<script>datadome</script>", {}) == "DataDome"
 
-    # Akamai
-    def test_akamai_url(self):
-        assert _identify_bot_service("https://www.akamai.com/page", "", {}) == "Akamai Bot Manager"
+    # Akamai — only the interstitial's own markers count as a block. Generic
+    # CDN presence (x-akamai-* headers, akam.net, mPulse RUM) is normal
+    # traffic for huge sites like UPS/USPS and must NOT be flagged, since
+    # that's what previously mislabeled ordinary UPS responses as blocked.
+    def test_akamai_abck_cookie_in_html(self):
+        assert _identify_bot_service("https://example.com", "document.cookie has _abck=abc123", {}) == "Akamai Bot Manager"
 
-    def test_akamai_response_header(self):
-        assert _identify_bot_service("https://example.com", "", {"x-akamai-request-id": "abc123"}) == "Akamai Bot Manager"
+    def test_akamai_bmsc_cookie_in_html(self):
+        assert _identify_bot_service("https://example.com", "ak_bmsc=xyz; path=/", {}) == "Akamai Bot Manager"
 
-    def test_akamai_in_html(self):
-        assert _identify_bot_service("https://example.com", "var _akamai = {};", {}) == "Akamai Bot Manager"
+    def test_akamai_bm_verify_in_html(self):
+        assert _identify_bot_service("https://example.com", "token bm-verify required", {}) == "Akamai Bot Manager"
 
-    def test_akamai_akam_net_in_html(self):
-        assert _identify_bot_service("https://example.com", 'src="https://akam.net/script.js"', {}) == "Akamai Bot Manager"
+    def test_akamai_sec_verify_endpoint_in_html(self):
+        assert _identify_bot_service("https://example.com", 'fetch("/_sec/verify?provider=interstitial")', {}) == "Akamai Bot Manager"
+
+    def test_akamai_ghost_server_header(self):
+        assert _identify_bot_service("https://example.com", "", {"server": "AkamaiGHost"}) == "Akamai Bot Manager"
+
+    def test_akamai_cdn_headers_alone_not_flagged(self):
+        """Regression: normal Akamai CDN pass-through (origin's own server header,
+        RUM/analytics artifacts) must not be mistaken for an active block."""
+        headers = {
+            "server": "Apache",
+            "x-akamai-transformed": "9l 2430 0 pmb=mNONE, 1mRUM, 2",
+            "server-timing": 'cdn-cache; desc=MISS, edge; dur=2123, origin; dur=15, ak_p; desc="123";dur=1',
+        }
+        assert _identify_bot_service("https://www.ups.com/track", "", headers) == "unknown"
+
+    def test_akamai_mpulse_domain_not_flagged(self):
+        assert _identify_bot_service("https://example.com", 'src="https://c.go-mpulse.net/api/config.json"', {}) == "unknown"
+
+    def test_akamai_generic_header_key_not_flagged(self):
+        assert _identify_bot_service("https://example.com", "", {"x-akamai-request-id": "abc123"}) == "unknown"
 
     # Kasada
     def test_kasada_kpsdk(self):

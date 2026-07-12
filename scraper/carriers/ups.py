@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
@@ -19,7 +20,8 @@ UPS_TRACKING_PAGE = (
     "&requester=ST/trackdetails"
 )
 
-WAIT_SELECTOR = "#stApp .ups-track_details, #stApp .ups-alert, #stApp .track-no-info-content"
+# DOM fallback only (see _parse_tracking_json) — status label and error banner ids.
+WAIT_SELECTOR = "#stApp_nameKey, #stApp_error_tittle2"
 
 
 class UPSProvider(CarrierProvider):
@@ -44,78 +46,108 @@ class UPSProvider(CarrierProvider):
     async def async_track(
         self, tracking_number: str, browser: Browser
     ) -> TrackingResult:
-        """Track a UPS package by scraping the tracking page."""
+        """Track a UPS package by intercepting the tracking page's Track/GetStatus API call."""
         result = TrackingResult(
             carrier=Carrier.UPS,
             tracking_number=tracking_number,
         )
 
-        url = self.tracking_url(tracking_number)
-        html = await self._get_page_content(browser, url, WAIT_SELECTOR)
-        self._parse_tracking_page(html, result)
-        result.last_updated = utcnow()
-        return result
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        try:
+            _api_data: dict | None = None
+            _api_event = asyncio.Event()
+
+            async def _on_response(response) -> None:
+                nonlocal _api_data
+                if _api_data is None and "Track/GetStatus" in response.url:
+                    try:
+                        _api_data = await response.json()
+                        _api_event.set()
+                    except Exception as exc:
+                        _LOGGER.warning(
+                            "UPS: failed to parse GetStatus response for %s: %s",
+                            tracking_number,
+                            exc,
+                        )
+
+            page.on("response", _on_response)
+
+            url = self.tracking_url(tracking_number)
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+
+            if not _api_event.is_set():
+                try:
+                    await asyncio.wait_for(_api_event.wait(), timeout=45.0)
+                except asyncio.TimeoutError:
+                    _LOGGER.warning(
+                        "UPS: GetStatus response not captured for %s", tracking_number
+                    )
+
+            if _api_data is not None:
+                self._parse_tracking_json(_api_data, result)
+            else:
+                await page.wait_for_selector(WAIT_SELECTOR, timeout=45000)
+                html = await page.content()
+                self._parse_tracking_page(html, result)
+
+            result.last_updated = utcnow()
+            return result
+        finally:
+            await context.close()
+
+    def _parse_tracking_json(self, data: dict, result: TrackingResult) -> None:
+        """Parse UPS tracking JSON from the Track/GetStatus API."""
+        try:
+            pkg = data["trackDetails"][0]
+        except (KeyError, IndexError, TypeError):
+            return
+
+        if pkg.get("errorCode"):
+            return
+
+        raw_status = pkg.get("packageStatus") or ""
+        if raw_status:
+            result.raw_status = raw_status
+            result.status = self._map_status(raw_status)
+
+        for activity in pkg.get("shipmentProgressActivities") or []:
+            description = (activity.get("activityScan") or "").strip()
+            timestamp = self._parse_ups_datetime(
+                activity.get("date", ""), activity.get("time", "")
+            )
+            result.events.append(
+                TrackingEvent(
+                    timestamp=timestamp or utcnow(),
+                    location=activity.get("location", ""),
+                    description=description,
+                    status=self._map_status(description),
+                )
+            )
+
+        # Activities are newest-first, so events[0] is the current status's date/time.
+        if result.events:
+            result.estimated_delivery = result.events[0].timestamp
+
+    def _parse_ups_datetime(self, date_str: str, time_str: str):
+        """Parse UPS's 'MM/DD/YYYY' + 'H:MM A.M./P.M.' fields into a datetime."""
+        combined = f"{date_str} {time_str}".replace("A.M.", "AM").replace("P.M.", "PM").strip()
+        return self._parse_date(combined)
 
     def _parse_tracking_page(self, html: str, result: TrackingResult) -> None:
-        """Parse the UPS tracking page HTML."""
+        """Parse the UPS tracking page HTML (fallback; the DOM has no shipment history)."""
         soup = BeautifulSoup(html, "html.parser")
 
-        status_el = soup.select_one(
-            ".ups-track_details .ups-txt_status, "
-            ".st_App-head .ups-txt_status, "
-            ".track-status-header"
-        )
+        status_el = soup.select_one("#stApp_nameKey")
         if status_el:
             raw_status = status_el.get_text(strip=True)
             result.raw_status = raw_status
             result.status = self._map_status(raw_status)
 
-        eta_el = soup.select_one(
-            ".ups-est_delivery .ups-txt_date, "
-            ".est-delivery .delivery-date, "
-            ".ups-track_details .ups-txt_eta"
-        )
-        if eta_el:
-            eta_text = eta_el.get_text(strip=True)
-            result.estimated_delivery = self._parse_date(eta_text)
-
-        activity_rows = soup.select(
-            ".ups-shipment_progress .ups-progress_row, "
-            "#stApp .activity-row, "
-            ".ups-activity_table tbody tr"
-        )
-        for row in activity_rows:
-            event = self._parse_activity_row(row)
-            if event:
-                result.events.append(event)
-
-    def _parse_activity_row(self, row) -> TrackingEvent | None:
-        """Parse a single activity row from UPS tracking history."""
-        desc_el = row.select_one(
-            ".ups-txt_activity, .activity-description, td:nth-child(1)"
-        )
-        loc_el = row.select_one(
-            ".ups-txt_location, .activity-location, td:nth-child(2)"
-        )
-        date_el = row.select_one(
-            ".ups-txt_date, .activity-date, td:nth-child(3)"
-        )
-
-        description = desc_el.get_text(strip=True) if desc_el else ""
-        location = loc_el.get_text(strip=True) if loc_el else ""
-
-        timestamp = utcnow()
-        if date_el:
-            date_text = date_el.get_text(strip=True)
-            parsed = self._parse_date(date_text)
-            if parsed:
-                timestamp = parsed
-
-        status = self._map_status(description)
-
-        return TrackingEvent(
-            timestamp=timestamp,
-            location=location,
-            description=description,
-            status=status,
-        )
+        month_el = soup.select_one("#st_App_PkgStsMonthNum")
+        time_el = soup.select_one("#st_App_PkgStsTime")
+        if month_el and time_el:
+            result.estimated_delivery = self._parse_ups_datetime(
+                month_el.get_text(strip=True), time_el.get_text(strip=True)
+            )
