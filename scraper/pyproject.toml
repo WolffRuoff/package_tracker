@@ -15,6 +15,7 @@ dependencies = [
     "aiosqlite>=0.20",
     "python-dateutil>=2.9",
     "pydantic-settings>=2.0",
+    "apscheduler>=3.10,<4",
 ]
 
 [dependency-groups]
