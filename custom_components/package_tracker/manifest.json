@@ -1,7 +1,9 @@
 {
   "domain": "package_tracker",
   "name": "Package Tracker",
-  "codeowners": ["@WolffRuoff"],
+  "codeowners": [
+    "@WolffRuoff"
+  ],
   "config_flow": true,
   "dependencies": [
     "http"
@@ -10,5 +12,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/WolffRuoff/package_tracker/issues",
   "requirements": [],
-  "version": "2.10.3"
+  "version": "2.10.4"
 }
