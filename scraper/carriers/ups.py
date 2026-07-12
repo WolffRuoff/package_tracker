@@ -20,9 +20,7 @@ UPS_TRACKING_PAGE = (
     "&requester=ST/trackdetails"
 )
 
-# UPS's Angular tracking app no longer wraps everything in a #stApp container;
-# these are the current status label (success) and error banner (not found)
-# element ids. DOM fallback only — see _parse_tracking_json for the primary path.
+# DOM fallback only (see _parse_tracking_json) — status label and error banner ids.
 WAIT_SELECTOR = "#stApp_nameKey, #stApp_error_tittle2"
 
 
@@ -48,15 +46,7 @@ class UPSProvider(CarrierProvider):
     async def async_track(
         self, tracking_number: str, browser: Browser
     ) -> TrackingResult:
-        """Track a UPS package via the tracking page's internal JSON API.
-
-        UPS's Angular app fetches its own tracking data from
-        webapis.ups.com/track/api/Track/GetStatus, which returns full
-        shipment history (shipmentProgressActivities) — much richer than
-        anything exposed in the rendered DOM. We intercept that response
-        instead of scraping HTML; DOM parsing is only a fallback if the API
-        call is never observed (e.g. a UPS-side change to the endpoint).
-        """
+        """Track a UPS package by intercepting the tracking page's Track/GetStatus API call."""
         result = TrackingResult(
             carrier=Carrier.UPS,
             tracking_number=tracking_number,
@@ -136,8 +126,7 @@ class UPSProvider(CarrierProvider):
                 )
             )
 
-        # Activities are returned newest-first, so the first entry is the
-        # current status's date/time (the closest thing to an ETA UPS exposes).
+        # Activities are newest-first, so events[0] is the current status's date/time.
         if result.events:
             result.estimated_delivery = result.events[0].timestamp
 
@@ -147,12 +136,7 @@ class UPSProvider(CarrierProvider):
         return self._parse_date(combined)
 
     def _parse_tracking_page(self, html: str, result: TrackingResult) -> None:
-        """Parse the UPS tracking page HTML (fallback if the API call is missed).
-
-        The redesigned page only exposes the current status and date/time in
-        the DOM, not the full shipment history — that's why this is a
-        fallback rather than the primary path.
-        """
+        """Parse the UPS tracking page HTML (fallback; the DOM has no shipment history)."""
         soup = BeautifulSoup(html, "html.parser")
 
         status_el = soup.select_one("#stApp_nameKey")

@@ -52,14 +52,8 @@ def _identify_bot_service(url: str, html: str, headers: dict[str, str]) -> str:
     ):
         return "DataDome"
 
-    # Akamai is also just a CDN a lot of large sites (UPS, USPS) sit behind for
-    # all traffic, so generic "akamai" mentions — x-akamai-* headers, the
-    # go-mpulse.net RUM/analytics domain, akam.net — show up on every request
-    # regardless of whether Bot Manager actually intervened, and flag normal
-    # pages as blocked. Only the interstitial/challenge's own markers (its
-    # cookies, its verify endpoint) or an edge-level block response
-    # (AkamaiGHost answers directly instead of passing the request through to
-    # the origin's own server header) indicate an actual block.
+    # Akamai is also just UPS/USPS's CDN, so generic "akamai" mentions show up
+    # on every request — only the challenge's own markers count as a block.
     if (
         "_abck" in html_l
         or "ak_bmsc" in html_l
