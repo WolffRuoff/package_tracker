@@ -33,6 +33,8 @@ When carriers add bot protection, the correct response is to improve Camoufox co
 
 **SpeedX parsing strategy:** SpeedX's tracking page is a Next.js SSR/RSC app. Tailwind CSS class names carry no semantic meaning, so the scraper extracts structured JSON from `self.__next_f.push` script tags instead of CSS selectors. Wait selector: `img[alt='warehouse']`. The JSON is JS-string-escaped (`\"` → `"`), so guard checks use bare word matching (`'trackingNumber' in text`) rather than quoted form, then `str.replace('\\"', '"')` before `json.JSONDecoder().raw_decode()` anchored at the `"events":` array.
 
+**UPS/FedEx parsing strategy:** Both tracking pages are SPAs (UPS: Angular, no `#stApp` container anymore; FedEx: React) that fetch their own data from an internal JSON API. `async_track` intercepts that response via `page.on("response")` — UPS's `webapis.ups.com/track/api/Track/GetStatus` (`trackDetails[0].shipmentProgressActivities` for full history), FedEx's `trackingCal`/`api.fedex.com/track` — rather than scraping the rendered DOM, which is thinner than the API response. DOM parsing is a fallback only, used if the API call is never observed.
+
 ## Key Conventions
 
 - `TrackingResult` and `TrackingEvent` are dataclasses defined in **both** `carriers/base.py` (HA side) and `scraper/carriers/base.py` (scraper side) — they are not shared; the HA-side `TrackingResult` has an extra `tracking_url` field populated from the scraper API response
