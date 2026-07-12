@@ -249,14 +249,22 @@ class TestPollAll:
 
 class TestStartStop:
     @pytest.mark.asyncio
-    async def test_start_creates_task(self, scheduler):
-        scheduler.start()
-        assert scheduler._task is not None
-        assert not scheduler._task.done()
-        await scheduler.stop()
+    async def test_start_schedules_poll_job(self, scheduler):
+        with patch.object(scheduler, "_poll_all", new=AsyncMock()):
+            scheduler.start()
+            assert scheduler._scheduler.running
+            assert scheduler._scheduler.get_job("poll_all") is not None
+            await scheduler.stop()
 
     @pytest.mark.asyncio
-    async def test_stop_cancels_task(self, scheduler):
-        scheduler.start()
+    async def test_stop_shuts_down_scheduler(self, scheduler):
+        with patch.object(scheduler, "_poll_all", new=AsyncMock()):
+            scheduler.start()
+            await scheduler.stop()
+            assert not scheduler._scheduler.running
+
+    @pytest.mark.asyncio
+    async def test_stop_before_start_is_noop(self, scheduler):
+        """Stopping a never-started scheduler must not raise."""
         await scheduler.stop()
-        assert scheduler._task.done()
+        assert not scheduler._scheduler.running
