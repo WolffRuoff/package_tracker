@@ -23,6 +23,10 @@ UPS_TRACKING_PAGE = (
 # DOM fallback only (see _parse_tracking_json) — status label and error banner ids.
 WAIT_SELECTOR = "#stApp_nameKey, #stApp_error_tittle2"
 
+# How long to wait for the GetStatus API response before falling back to DOM
+# parsing. Module-level so tests can shrink it instead of eating the real wait.
+_GETSTATUS_TIMEOUT = 45.0
+
 
 class UPSProvider(CarrierProvider):
     """UPS tracking provider via web scraping."""
@@ -79,7 +83,7 @@ class UPSProvider(CarrierProvider):
 
             if not _api_event.is_set():
                 try:
-                    await asyncio.wait_for(_api_event.wait(), timeout=45.0)
+                    await asyncio.wait_for(_api_event.wait(), timeout=_GETSTATUS_TIMEOUT)
                 except asyncio.TimeoutError:
                     _LOGGER.warning(
                         "UPS: GetStatus response not captured for %s", tracking_number
@@ -88,8 +92,7 @@ class UPSProvider(CarrierProvider):
             if _api_data is not None:
                 self._parse_tracking_json(_api_data, result)
             else:
-                await page.wait_for_selector(WAIT_SELECTOR, timeout=45000)
-                html = await page.content()
+                html = await self._get_page_content(browser, url, WAIT_SELECTOR)
                 self._parse_tracking_page(html, result)
 
             result.last_updated = utcnow()
