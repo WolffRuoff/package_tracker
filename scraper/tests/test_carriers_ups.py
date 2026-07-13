@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -211,9 +212,10 @@ class TestAsyncTrack:
 
     @pytest.mark.asyncio
     async def test_html_fallback_when_no_api_response(
-        self, provider, mock_browser, ups_delivered_html
+        self, provider, mock_browser, ups_delivered_html, monkeypatch
     ):
         """When no API response is intercepted, falls back to HTML parsing."""
+        monkeypatch.setattr("scraper.carriers.ups._GETSTATUS_TIMEOUT", 0.01)
         browser, mock_page = mock_browser
         mock_page.content.return_value = ups_delivered_html
 
@@ -231,6 +233,22 @@ class TestAsyncTrack:
 
         with pytest.raises(Exception, match="Browser error"):
             await provider.async_track(VALID_TRACKING, browser)
+
+    @pytest.mark.asyncio
+    async def test_logs_diagnostics_when_both_api_and_dom_fail(
+        self, provider, mock_browser, caplog, monkeypatch
+    ):
+        """Neither the API response nor the DOM fallback selector show up."""
+        monkeypatch.setattr("scraper.carriers.ups._GETSTATUS_TIMEOUT", 0.01)
+        browser, mock_page = mock_browser
+        mock_page.wait_for_selector.side_effect = Exception("Timeout exceeded")
+        mock_page.content.return_value = "<html>stuck</html>"
+
+        with caplog.at_level(logging.ERROR, logger="scraper.carriers.base"):
+            with pytest.raises(Exception, match="Timeout exceeded"):
+                await provider.async_track(VALID_TRACKING, browser)
+
+        assert "Page load failed" in caplog.text
 
 
 class TestStatusMapping:
